@@ -1,1 +1,4 @@
 node_modules/
+apps/taste/dist/
+plugins-data/
+*.lock

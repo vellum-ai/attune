@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["apps/taste/src/**/*", "scripts/**/*", "tests/**/*"]
+  "include": ["apps/taste/src/**/*", "routes/**/*", "hooks/**/*", "skills/**/*", "types/**/*", "scripts/**/*", "tests/**/*"]
 }

@@ -38,8 +38,8 @@ import type { Dimension, DimensionId, Option } from "./data";
 export const PAGE_BY_DIMENSION: Record<DimensionId, string> = {
   writing: "taste-writing",
   music: "taste-music",
-  visual: "taste-visual",
-  building: "taste-building",
+  "web-design": "taste-web-design",
+  "interior-design": "taste-interior-design",
 };
 
 // ── Evidence payload ───────────────────────────────────────────────────────
@@ -230,7 +230,7 @@ export function buildPrompt(
   return [
     "TRUSTED TASK — Taste onboarding hand-off",
     "",
-    `I completed the ${label} questionnaire in the Taste app and pressed "Build my ${label} taste". That press is my consent to update that one profile.`,
+    `I completed the ${label} questionnaire in the Taste app and pressed "Save profile". That press is my consent to update that one profile.`,
     "",
     "Allowed operation — exactly one:",
     `- Update the [[${page}]] memory page with concise, derived preference statements about my ${label} taste.`,

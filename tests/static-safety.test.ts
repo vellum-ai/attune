@@ -30,9 +30,10 @@ function runtimeSources(dir: string): string[] {
 }
 
 const FORBIDDEN: Array<{ label: string; pattern: RegExp }> = [
-  // Network / telemetry — the app must send nothing anywhere; even the
-  // host-proxied `window.vellum.fetch` bridge must stay unused.
-  { label: "fetch call", pattern: /\bfetch\s*\(/ },
+  // Raw network / telemetry stays forbidden. The app may use only the
+  // host-proxied bridge for its own namespaced profile route; that contract
+  // is checked explicitly below.
+  { label: "raw fetch call", pattern: /(?<!\.)\bfetch\s*\(/ },
   { label: "XMLHttpRequest", pattern: /XMLHttpRequest/ },
   { label: "WebSocket", pattern: /\bWebSocket\b/ },
   { label: "EventSource", pattern: /EventSource/ },
@@ -74,7 +75,7 @@ describe("runtime source static safety", () => {
     });
   }
 
-  test("the only host bridge calls are the three supported actions", () => {
+  test("the only host bridge actions are supported actions", () => {
     const vellum = readFileSync(join(SRC_DIR, "vellum.ts"), "utf-8");
     const actions = [...vellum.matchAll(/sendAction\?\.\(\s*"([^"]+)"/g)].map(
       (m) => m[1],
@@ -85,5 +86,15 @@ describe("runtime source static safety", () => {
         action,
       );
     }
+  });
+
+  test("the host fetch bridge is scoped to the Taste profile route", () => {
+    const vellum = readFileSync(join(SRC_DIR, "vellum.ts"), "utf-8");
+    const routes = [...vellum.matchAll(/hostFetch\(\s*"([^"]+)"/g)].map(
+      (match) => match[1],
+    );
+    expect(routes.length).toBeGreaterThan(0);
+    expect(new Set(routes)).toEqual(new Set(["/x/plugins/taste/profile"]));
+    expect(vellum).not.toMatch(/\bwindow\.fetch\s*\(/);
   });
 });

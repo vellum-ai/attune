@@ -1,4 +1,4 @@
-# Taste
+# Attune
 
 Teach your Vellum assistant your taste, so the first draft is already close —
 and so it keeps learning every time you react to something it made.

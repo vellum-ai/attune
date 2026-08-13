@@ -1,7 +1,8 @@
 {
   "name": "taste",
   "version": "0.2.0",
-  "description": "Teach your assistant your taste in writing, music, visual work, and building — and keep it learning from how you react.",
+  "description": "Teach your assistant your taste, then let it learn from durable reactions without turning one-off instructions into personality traits.",
+  "type": "module",
   "peerDependencies": {
     "@vellumai/plugin-api": "^0.11.0"
   },

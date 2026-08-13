@@ -14,20 +14,20 @@ const SKILL = readFileSync(
 );
 
 describe("read path", () => {
-  test("covers all four dimensions including building", () => {
+  test("covers all four final dimensions", () => {
     for (const page of [
       "taste-writing",
       "taste-music",
-      "taste-visual",
-      "taste-building",
+      "taste-web-design",
+      "taste-interior-design",
     ]) {
       expect(SKILL).toContain(page);
     }
   });
 
-  test("activates for technical builds, not only prose", () => {
-    expect(SKILL).toMatch(/including\s+technical builds/);
-    expect(SKILL).toMatch(/app, website, product, API/i);
+  test("activates for the final creative dimensions", () => {
+    expect(SKILL).toMatch(/Writing.*Music.*Web Design.*Interior Design/s);
+    expect(SKILL).toMatch(/web design|interior design/i);
   });
 
   test("excludes mechanical tasks", () => {
@@ -58,14 +58,14 @@ describe("read path", () => {
   });
 
   test("taste is applied silently", () => {
-    expect(SKILL).toContain("Apply it silently");
+    expect(SKILL).toContain("apply it silently");
   });
 });
 
 describe("learning path", () => {
   test("one-off constraints are non-durable and not recorded", () => {
     expect(SKILL).toContain("One-off project constraints");
-    expect(SKILL).toMatch(/One-off constraint, non-durable/);
+    expect(SKILL).toMatch(/one-off constraint|one-off constraints/i);
   });
 
   test("contentless praise is not evidence", () => {

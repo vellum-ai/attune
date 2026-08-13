@@ -6,7 +6,7 @@
  * — a pair that turns out not to discriminate is a copy change, not a UI change.
  */
 
-export type DimensionId = "writing" | "music" | "visual";
+export type DimensionId = "writing" | "music" | "visual" | "building";
 
 /** One this-or-that call. */
 export interface Pair {
@@ -32,9 +32,14 @@ export interface Option {
 export interface Dimension {
   id: DimensionId;
   label: string;
-  /** The concept page this dimension's memory is filed to. */
-  page: string;
-  /** One line under the title on the home card. */
+  /**
+   * One line under the title on the home card.
+   *
+   * Note the destination memory page is deliberately NOT part of this data:
+   * it is derived from the dimension id through the fixed map in
+   * `prompt.ts` (`PAGE_BY_DIMENSION`), so nothing user-editable or
+   * content-adjacent can steer where the profile is filed.
+   */
   blurb: string;
   pairs: Pair[];
   sources: SourceSpec;
@@ -57,7 +62,6 @@ export const DIMENSIONS: Dimension[] = [
   {
     id: "writing",
     label: "Writing",
-    page: "taste-writing",
     blurb: "How your drafts should sound before you touch them",
     sources: {
       kind: "text",
@@ -132,7 +136,6 @@ export const DIMENSIONS: Dimension[] = [
   {
     id: "music",
     label: "Music",
-    page: "taste-music",
     blurb: "What you reach for, and what you reach for it instead of",
     sources: {
       kind: "list",
@@ -194,7 +197,6 @@ export const DIMENSIONS: Dimension[] = [
   {
     id: "visual",
     label: "Visual",
-    page: "taste-visual",
     blurb: "How much the work is allowed to shout",
     sources: {
       kind: "none",
@@ -248,6 +250,88 @@ export const DIMENSIONS: Dimension[] = [
         b: {
           body: "The image. Type stays out of the way.",
           means: "image-led design with restrained type",
+        },
+      },
+    ],
+  },
+  {
+    id: "building",
+    label: "Building",
+    blurb: "How you like systems to be shaped, run, and handed to you",
+    sources: {
+      kind: "text",
+      label: "Things you've built or design you admire",
+      placeholder:
+        "Paste a short README or design note you wrote, or drop in URLs of tools whose design you admire — one per line.",
+      hint: "One or two beats a portfolio. What matters is the design decisions in them, not the polish.",
+    },
+    pairs: [
+      {
+        id: "control",
+        question: "A new service needs a job queue.",
+        a: {
+          body: "A Postgres table, a worker loop we wrote, and a dashboard query we understand end to end.",
+          means:
+            "raw control — owning the glue code and understanding every layer, over adopting a framework's abstraction",
+        },
+        b: {
+          body: "A managed queue with retries, dead-lettering, and metrics out of the box.",
+          means:
+            "framework leverage — accepting an abstraction's opinions in exchange for not maintaining plumbing",
+        },
+      },
+      {
+        id: "automation",
+        question: "How should a system act on your behalf?",
+        a: {
+          body: "Propose, then wait. Show me the diff and give me an apply step.",
+          means:
+            "explicit staged boundaries — propose-then-apply with a visible diff, over ambient automation",
+        },
+        b: {
+          body: "Just do it and tell me after. Interruptions cost more than surprises.",
+          means:
+            "ambient automation that acts and reports, accepting the occasional surprise",
+        },
+      },
+      {
+        id: "defaults",
+        question: "Shipping a tool other people will use:",
+        a: {
+          body: "One good default path and few knobs. Opinionated beats flexible.",
+          means: "opinionated defaults with a small configuration surface",
+        },
+        b: {
+          body: "Expose the config. People should be able to rewire it without forking.",
+          means:
+            "exposed configurability, even at the cost of a larger surface to learn",
+        },
+      },
+      {
+        id: "iteration",
+        question: "Version one of anything:",
+        a: {
+          body: "The smallest reversible slice today, and learn from it running.",
+          means: "fast reversible iteration over upfront completeness",
+        },
+        b: {
+          body: "Take the extra week — migrations, edge cases, docs — so v1 doesn't need a v1.1.",
+          means:
+            "heavier upfront completeness, so the first release stands on its own",
+        },
+      },
+      {
+        id: "evidence",
+        question: "When it runs, what do you want to see?",
+        a: {
+          body: "Logs, counters, a status page. Show the evidence even when it's noisy.",
+          means:
+            "visible evidence and observability, tolerating a noisier surface",
+        },
+        b: {
+          body: "A clean surface that just works. Detail only when I go digging.",
+          means:
+            "a clean, quiet surface that hides its workings until asked",
         },
       },
     ],

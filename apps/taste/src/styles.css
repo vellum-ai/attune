@@ -14,6 +14,7 @@
 [data-dimension="writing"] { --pigment: #35857a; }
 [data-dimension="music"]   { --pigment: #b8863b; }
 [data-dimension="visual"]  { --pigment: #b04e52; }
+[data-dimension="building"] { --pigment: #5b6ba8; }
 
 body {
   margin: 0;
@@ -62,7 +63,7 @@ h3 { font-size: 0.95rem; margin: 0; }
 
 /* ── Dimension cards ──────────────────────────────────────────────────── */
 .cards { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
-@media (min-width: 640px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 640px) { .cards { grid-template-columns: repeat(2, 1fr); } }
 
 .card {
   appearance: none;

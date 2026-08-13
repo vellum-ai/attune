@@ -10,6 +10,7 @@
 import { useState } from "preact/hooks";
 
 import type { Dimension, Option } from "../data";
+import { buildPrompt } from "../prompt";
 import { markCompleted, relayPrompt, showSplit, hostAvailable } from "../vellum";
 
 interface Props {
@@ -66,9 +67,11 @@ export function Flow({ dimension, onExit }: Props) {
         <div class="done">
           <h2>Sent to your assistant</h2>
           <p>
-            It's writing your {dimension.label.toLowerCase()} taste to memory
-            now — you'll see it work in the chat. Come back any time to answer
-            more; later answers refine the same page rather than replacing it.
+            Your answers and source material went over as evidence; the
+            assistant distills them into short preference statements on your{" "}
+            {dimension.label.toLowerCase()} taste page — it never stores your
+            samples themselves. Come back any time to answer more; later
+            answers refine the same page rather than replacing it.
           </p>
           {dimension.sources.kind === "none" && (
             <p class="hint">{dimension.sources.hint}</p>
@@ -173,6 +176,12 @@ export function Flow({ dimension, onExit }: Props) {
             ? "Answer at least one to build"
             : `Build my ${dimension.label.toLowerCase()} taste`}
         </button>
+        <p class="hint">
+          Building sends your answers and anything above to your assistant as
+          evidence. It saves only short derived preferences to your{" "}
+          {dimension.label.toLowerCase()} taste page — never the samples
+          themselves. Nothing is sent until you press it.
+        </p>
         {!hostAvailable() && (
           <p class="hint">
             Open this inside Vellum to hand off to your assistant. Everything
@@ -196,49 +205,3 @@ function Header({ dimension, onExit }: { dimension: Dimension; onExit: () => voi
   );
 }
 
-/**
- * Compose the message the assistant receives.
- *
- * Self-contained by necessity — the assistant cannot see this app — and phrased
- * as preferences rather than as quiz answers, because what gets written to
- * memory should read like a description of the user, not a transcript of a
- * form they filled in.
- */
-export function buildPrompt(
-  dimension: Dimension,
-  answers: Record<string, Option>,
-  sourceText: string,
-  items: string[],
-): string {
-  const lines: string[] = [];
-
-  lines.push(
-    `I just went through the ${dimension.label.toLowerCase()} onboarding in the Taste app. Build (or refine) my ${dimension.label.toLowerCase()} taste from what follows, and save it to memory on the [[${dimension.page}]] page.`,
-  );
-
-  const preferences = Object.values(answers).map((o) => o.means);
-  if (preferences.length > 0) {
-    lines.push("", "From the this-or-that questions, I prefer:");
-    preferences.forEach((p) => lines.push(`- ${p}`));
-  }
-
-  const trimmedText = sourceText.trim();
-  if (trimmedText) {
-    lines.push(
-      "",
-      "Source material I'd point at as mine (URLs are worth reading; pasted text speaks for itself):",
-      trimmedText,
-    );
-  }
-
-  if (items.length > 0) {
-    lines.push("", `Artists I return to: ${items.join(", ")}.`);
-  }
-
-  lines.push(
-    "",
-    "Write it as a description of what I prefer, not as a record of this form — it should still make sense to you in a month with no memory of these questions. Keep it tight, and if the page already exists, sharpen it rather than appending a second copy.",
-  );
-
-  return lines.join("\n");
-}

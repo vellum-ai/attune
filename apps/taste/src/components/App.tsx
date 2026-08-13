@@ -9,6 +9,7 @@
 import { useState } from "preact/hooks";
 
 import { DIMENSIONS, dimensionById, type DimensionId } from "../data";
+import { PAGE_BY_DIMENSION } from "../prompt";
 import { readCompleted, relayPrompt, showSplit } from "../vellum";
 import { Flow } from "./Flow";
 
@@ -30,9 +31,9 @@ export function App() {
         <p class="eyebrow">Taste</p>
         <h1>Teach it what you like.</h1>
         <p class="lede">
-          Three dimensions, each built the same way — a short run of
+          Four dimensions, each built the same way — a short run of
           this-or-that, plus whatever source material you already have. What
-          comes out is a profile your assistant writes from, and keeps revising
+          comes out is a profile your assistant works from, and keeps revising
           every time you react to something it made.
         </p>
       </header>
@@ -75,7 +76,11 @@ export function App() {
             type="button"
             onClick={() => {
               relayPrompt(
-                "What do you have recorded about my taste so far? Read the [[taste-writing]], [[taste-music]] and [[taste-visual]] memory pages and tell me what each one says — plainly, and say which ones are still thin.",
+                `What do you have recorded about my taste so far? Read the ${Object.values(
+                  PAGE_BY_DIMENSION,
+                )
+                  .map((page) => `[[${page}]]`)
+                  .join(", ")} memory pages and tell me what each one says — plainly, and say which ones are still thin.`,
               );
               showSplit();
             }}

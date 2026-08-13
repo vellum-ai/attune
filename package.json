@@ -1,0 +1,11 @@
+{
+  "name": "taste",
+  "version": "0.1.0",
+  "description": "Teach your assistant your taste in writing, music, and visual work — and keep it learning from how you react.",
+  "peerDependencies": {
+    "@vellumai/plugin-api": "^0.11.0"
+  },
+  "vellum": {
+    "icon": "🎚️"
+  }
+}

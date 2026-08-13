@@ -1,0 +1,212 @@
+/*
+ * Built on the host's `--v-*` tokens so the app inherits the workspace theme
+ * rather than declaring one. The only colour of its own is the per-dimension
+ * pigment: with three dimensions on screen at once, colour is what makes one
+ * identifiable before its label is read.
+ *
+ * Pigments are named for materials rather than hues, and are set on the
+ * container so a whole screen inherits its dimension's colour from one place.
+ */
+
+:root {
+  --pigment: var(--v-accent);
+}
+[data-dimension="writing"] { --pigment: #35857a; }
+[data-dimension="music"]   { --pigment: #b8863b; }
+[data-dimension="visual"]  { --pigment: #b04e52; }
+
+body {
+  margin: 0;
+  background: var(--v-bg);
+  color: var(--v-text);
+  font-family: var(--v-font-family);
+  line-height: var(--v-line-height, 1.6);
+}
+
+.home,
+.flow {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: var(--v-spacing-lg, 1.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--v-spacing-lg, 1.5rem);
+}
+
+/* ── Type ─────────────────────────────────────────────────────────────── */
+h1 {
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  margin: 0;
+}
+h2 { font-size: 1.2rem; margin: 0; }
+h3 { font-size: 0.95rem; margin: 0; }
+
+.eyebrow {
+  font-family: var(--v-font-mono);
+  font-size: var(--v-font-size-xs, 0.72rem);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--v-text-muted);
+  margin: 0;
+}
+
+.lede { color: var(--v-text-secondary); margin: 0; max-width: 54ch; }
+.hint { color: var(--v-text-muted); font-size: 0.85rem; margin: 0; max-width: 60ch; }
+.blurb { color: var(--v-text-secondary); margin: 0; }
+
+.home-head,
+.flow-head { display: flex; flex-direction: column; gap: 0.5rem; }
+
+/* ── Dimension cards ──────────────────────────────────────────────────── */
+.cards { display: grid; grid-template-columns: 1fr; gap: 0.75rem; }
+@media (min-width: 640px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+
+.card {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: var(--v-surface);
+  color: var(--v-text);
+  border: 1px solid var(--v-surface-border);
+  border-top: 2px solid var(--pigment);
+  border-radius: var(--v-radius-xs, 4px);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: transform var(--v-duration-fast, 140ms) ease,
+    border-color var(--v-duration-fast, 140ms) ease;
+}
+.card:hover { transform: translateY(-1px); border-color: var(--pigment); }
+.card:focus-visible { outline: 2px solid var(--pigment); outline-offset: 2px; }
+
+.card-name { font-size: 1.05rem; font-weight: 600; }
+.card-blurb { color: var(--v-text-secondary); font-size: 0.85rem; }
+.card-meta,
+.opt-tag {
+  font-family: var(--v-font-mono);
+  font-size: var(--v-font-size-xs, 0.7rem);
+  letter-spacing: 0.05em;
+  color: var(--v-text-muted);
+}
+
+.bar,
+.progress {
+  height: 3px;
+  background: var(--v-surface-border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bar > span,
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--pigment);
+  transition: width var(--v-duration-fast, 140ms) ease;
+}
+
+/* ── The this-or-that run ─────────────────────────────────────────────── */
+.pairs { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.pair-block { border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.pair-block legend { padding: 0; font-size: 0.95rem; font-weight: 600; }
+
+.pair { display: grid; grid-template-columns: 1fr; gap: 0.6rem; }
+@media (min-width: 640px) { .pair { grid-template-columns: 1fr 1fr; } }
+
+.opt {
+  appearance: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: var(--v-surface);
+  color: var(--v-text);
+  border: 1px solid var(--v-surface-border);
+  border-radius: var(--v-radius-xs, 4px);
+  padding: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color var(--v-duration-fast, 140ms) ease,
+    transform var(--v-duration-fast, 140ms) ease;
+}
+.opt:hover { border-color: var(--pigment); transform: translateY(-1px); }
+.opt:focus-visible { outline: 2px solid var(--pigment); outline-offset: 2px; }
+.opt[aria-pressed="true"] { border-color: var(--pigment); box-shadow: inset 0 0 0 1px var(--pigment); }
+.opt[aria-pressed="true"] .opt-tag { color: var(--pigment); }
+.opt-body { line-height: 1.5; }
+
+/* ── Sources ──────────────────────────────────────────────────────────── */
+.sources { display: flex; flex-direction: column; gap: 0.55rem; }
+
+.field {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--v-text);
+  background: var(--v-surface);
+  border: 1px solid var(--v-surface-border);
+  border-radius: var(--v-radius-xs, 4px);
+  padding: 0.65rem 0.75rem;
+  resize: vertical;
+}
+.field:focus-visible { outline: 2px solid var(--pigment); outline-offset: 1px; }
+
+.list-input { display: flex; flex-direction: column; gap: 0.5rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chip {
+  appearance: none;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: transparent;
+  color: var(--v-text);
+  border: 1px solid var(--pigment);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+}
+.chip:focus-visible { outline: 2px solid var(--pigment); outline-offset: 2px; }
+
+/* ── Actions ──────────────────────────────────────────────────────────── */
+.actions,
+.review { display: flex; flex-direction: column; gap: 0.6rem; align-items: flex-start; }
+
+.btn {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  background: var(--v-surface);
+  color: var(--v-text);
+  border: 1px solid var(--v-surface-border);
+  border-radius: var(--v-radius-xs, 4px);
+  padding: 0.55rem 0.95rem;
+}
+.btn:hover { border-color: var(--pigment); }
+.btn:focus-visible { outline: 2px solid var(--pigment); outline-offset: 2px; }
+.btn.primary { background: var(--pigment); border-color: var(--pigment); color: var(--v-aux-white, #fff); }
+.btn:disabled { cursor: not-allowed; opacity: 0.55; }
+.btn:disabled:hover { border-color: var(--v-surface-border); }
+
+.back {
+  appearance: none;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--v-text-muted);
+  align-self: flex-start;
+}
+.back:hover { color: var(--v-text); }
+.back:focus-visible { outline: 2px solid var(--pigment); outline-offset: 2px; }
+
+.done { display: flex; flex-direction: column; gap: 0.75rem; align-items: flex-start; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0.01ms !important; }
+}

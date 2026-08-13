@@ -50,9 +50,11 @@ Once the repo is public, `assistant plugins install <github-url>` works instead.
 
 - **Skill** — written. Recall before producing, record durable reactions, keep
   entries non-duplicative, never narrate the profile.
-- **Onboarding app** — designed, not built. A this-or-that questionnaire per
-  dimension plus source upload, relaying a self-contained prompt to the
-  assistant to build the initial pages.
+- **Onboarding app** — built (`apps/taste/`). A this-or-that run per dimension
+  plus source material, relaying one self-contained prompt to the assistant.
+  Nothing is sent until the build button, so abandoning halfway writes nothing.
+  Visual takes no uploads yet: `relay_prompt` carries text only, so images are
+  attached in the chat instead of through the app.
 - **Open question** — whether writing taste should reach every turn or only
   turns that look like writing. Currently the skill decides, which means it
   will sometimes miss.

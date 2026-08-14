@@ -16,7 +16,13 @@ Teach your Vellum assistant what good feels like, then let that understanding im
 Attune keeps two complementary records:
 
 - **Memory pages** are the readable editorial description the assistant recalls before styleful work.
-- **The structured profile** is the canonical axis-level state used by the app. It keeps onboarding baseline, learned evidence, named confidence, and explicit manual overrides separate.
+- **The structured profile** is the canonical axis-level state. It keeps onboarding baseline, learned evidence, named confidence, and explicit manual overrides separate.
+
+Both are read before styleful work. The profile is read through the skill-scoped
+`read_profile` tool, which renders each axis as a directive position rather than
+JSON. Without that read the profile would be write-only: a slider moved in the
+app changes `profile.json` and nothing else, so the calibration would never
+reach the reply it was meant to shape.
 
 The lifecycle is deliberate:
 
@@ -59,7 +65,8 @@ Plugin surfaces:
 
 - `routes/profile.ts` exposes GET plus `set_baseline` and `set_override` mutations in the plugin namespace.
 - `skills/taste/tools/update_profile.ts` owns deterministic aggregation, neutral priors, validation, lock-file coordination, and atomic writes.
-- `skills/taste/TOOLS.json` exposes only qualitative learned-evidence inputs: dimension, axis, direction, strength, and reason.
+- `skills/taste/tools/read_profile.ts` is the assistant's read path. It resolves each axis to an effective position (a manual override wins over the learned position), names the confidence band, and omits the private evidence ledger.
+- `skills/taste/TOOLS.json` exposes the two skill tools. `update_profile` takes only qualitative learned-evidence inputs — dimension, axis, direction, strength, and reason — and enumerates every axis id it accepts, so the model never guesses one.
 - `hooks/post-tool-use.ts` publishes the `taste:profile` invalidation tag after successful learned-profile updates.
 - The app uses `window.vellum.fetch` only for `/x/plugins/taste/profile`, and subscribes to `taste:profile` to re-read canonical state.
 
@@ -88,7 +95,7 @@ bun run build
 
 `apps/taste/dist` is generated and ignored. The Vellum watcher owns the runtime build. Do not hand-edit or commit it.
 
-The tests cover prompt separation, final skill policy, static runtime safety, structured-profile invariants, and reproducible builds.
+The tests cover prompt separation, final skill policy, static runtime safety, structured-profile invariants, the calibration round trip, and reproducible builds.
 
 ## Install
 
@@ -96,4 +103,4 @@ The tests cover prompt separation, final skill policy, static runtime safety, st
 assistant plugins install https://github.com/vellum-ai/attune
 ```
 
-The plugin contributes the Taste skill, living-profile app, namespaced route, qualitative update tool, and invalidation hook.
+The plugin contributes the Taste skill, living-profile app, namespaced route, profile read and update tools, and invalidation hook.

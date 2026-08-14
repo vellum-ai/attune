@@ -2,6 +2,27 @@
   "version": 1,
   "tools": [
     {
+      "name": "read_profile",
+      "description": "Read the user's recorded taste profile. Call this before producing styleful work (writing, music picks, web design, interior design) so the output reflects their calibrated preferences rather than a generic default. Returns each axis with its current position, whether it was set by hand or learned, and its confidence. Also returns the axis ids that update_profile accepts.",
+      "category": "productivity",
+      "risk": "low",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "dimensions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["writing", "music", "web-design", "interior-design"]
+            },
+            "description": "Dimensions relevant to the task. Read the smallest useful set; a landing page is usually web-design plus writing. Omit to read all four."
+          }
+        }
+      },
+      "executor": "tools/read_profile.ts",
+      "execution_target": "sandbox"
+    },
+    {
       "name": "update_profile",
       "description": "Record a durable, generalized taste reaction in the structured Taste profile. Use only when the user's feedback is a standing preference that should apply again later. Do not use for one-off constraints, explicit instructions limited to this task, or contentless praise.",
       "category": "productivity",
@@ -11,16 +32,46 @@
         "properties": {
           "dimension_id": {
             "type": "string",
-            "description": "Taste dimension id, such as writing, music, web-design, or interior-design."
+            "enum": ["writing", "music", "web-design", "interior-design"],
+            "description": "Taste dimension the reaction belongs to."
           },
           "axis_id": {
             "type": "string",
-            "description": "Specific seeded axis id within the dimension."
+            "enum": [
+              "hedging",
+              "order",
+              "ornament",
+              "length",
+              "jargon",
+              "texture",
+              "palette",
+              "motion",
+              "demand",
+              "web-density",
+              "web-hierarchy",
+              "web-type",
+              "web-navigation",
+              "web-colour",
+              "web-motion",
+              "web-imagery",
+              "web-surface",
+              "web-finish",
+              "interior-plan",
+              "interior-light",
+              "interior-palette",
+              "interior-material",
+              "interior-furniture",
+              "interior-object",
+              "interior-age",
+              "interior-comfort",
+              "interior-contrast"
+            ],
+            "description": "Seeded axis within the dimension. writing: hedging (flat assertion vs hedged), order (conclusion first vs reasoning first), ornament (literal vs figurative), length (short declaratives vs longer clauses), jargon (unglossed vs glossed). music: texture, palette, motion, demand. web-design: web-density, web-hierarchy, web-type, web-navigation, web-colour, web-motion, web-imagery, web-surface, web-finish. interior-design: interior-plan, interior-light, interior-palette, interior-material, interior-furniture, interior-object, interior-age, interior-comfort, interior-contrast. Call read_profile for each axis's left and right labels."
           },
           "direction": {
             "type": "string",
             "enum": ["left", "right"],
-            "description": "Which side of the axis the durable preference favors."
+            "description": "Which side of the axis the durable preference favors. read_profile names the left and right label for every axis."
           },
           "strength": {
             "type": "string",

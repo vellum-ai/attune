@@ -92,10 +92,10 @@ describe("validation and recovery", () => {
         version: 2,
         dimensions: {
           writing: { answered: 3 },
-          "web-design": { answered: 4 }, // unknown dimension
+          building: { answered: 4 }, // unknown dimension (retired)
           music: { answered: -1 }, // negative
-          visual: { answered: 400 }, // impossible count
-          building: { answered: 2.5 }, // non-integer
+          "web-design": { answered: 400 }, // impossible count
+          "interior-design": { answered: 2.5 }, // non-integer
         },
       }),
     );
@@ -108,12 +108,12 @@ describe("legacy migration", () => {
   test("valid predecessor counts migrate once and the legacy key is deleted", () => {
     windowShim.localStorage.setItem(
       LEGACY_KEY,
-      JSON.stringify({ writing: 4, music: 2, "web-design": 9, visual: -2 }),
+      JSON.stringify({ writing: 4, music: 2, building: 9, "interior-design": -2 }),
     );
     const state = readCompletion();
     expect(state.writing).toEqual({ answered: 4 });
     expect(state.music).toEqual({ answered: 2 });
-    expect(state.visual).toBeUndefined();
+    expect(state["interior-design"]).toBeUndefined();
     expect(windowShim.localStorage.getItem(LEGACY_KEY)).toBeNull();
     expect(windowShim.localStorage.getItem(STORAGE_KEY)).not.toBeNull();
   });
@@ -138,8 +138,8 @@ describe("writes and change notification", () => {
   });
 
   test("only completion metadata is stored — never evidence or prompts", () => {
-    markAnswered("building", 3);
-    markPersisted("building", "2026-08-13T00:00:00.000Z");
+    markAnswered("interior-design", 3);
+    markPersisted("interior-design", "2026-08-13T00:00:00.000Z");
     const raw = windowShim.localStorage.getItem(STORAGE_KEY)!;
     const parsed = JSON.parse(raw) as { version: number; dimensions: Record<string, unknown> };
     expect(Object.keys(parsed).sort()).toEqual(["dimensions", "version"]);

@@ -1,8 +1,9 @@
 # Attune
 
 Teach your Vellum assistant your taste, so the first draft is already close —
-with a persistence loop that reports success only after the durable write is
-verified, and a learning path that records preferences without recording you.
+a living, calibrated profile plus editorial memory pages, with a persistence
+loop that reports success only after the durable write is verified, and a
+learning path that records preferences without recording you.
 
 ## When Taste activates
 
@@ -19,12 +20,23 @@ separately mandate or suppress the skill will dominate what you observe.
 
 ## The four dimensions
 
+<<<<<<< HEAD
 | Dimension | Page             | Built from                                                       |
 | --------- | ---------------- | ---------------------------------------------------------------- |
 | Writing   | `taste-writing`  | This-or-that calls, plus samples you point at                    |
 | Music     | `taste-music`    | This-or-that calls, plus artists you name                        |
 | Visual    | `taste-visual`   | This-or-that calls; images are attached in chat afterwards (the app takes no uploads) |
 | Building  | `taste-building` | This-or-that calls about system design, plus things you've built |
+=======
+- **Memory pages** are the readable editorial description the assistant recalls before styleful work.
+- **The structured profile** is the canonical axis-level state. It keeps onboarding baseline, learned evidence, named confidence, and explicit manual overrides separate.
+
+Both are read before styleful work. The profile is read through the skill-scoped
+`read_profile` tool, which renders each axis as a directive position rather than
+JSON. Without that read the profile would be write-only: a slider moved in the
+app changes `profile.json` and nothing else, so the calibration would never
+reach the reply it was meant to shape.
+>>>>>>> origin/main
 
 Building covers product instincts: raw control vs. framework leverage,
 staged vs. ambient automation, opinionated defaults vs. exposed
@@ -53,8 +65,13 @@ on.
 
 ## How onboarding persists — the verified loop
 
-Pressing **Build my … taste** is the consent step (no second confirmation).
-What happens then:
+Pressing the build button on the summary screen is the consent step (no
+second confirmation). What happens then:
+
+0. The questionnaire baseline — only the pairs actually answered; an
+   unanswered question is no evidence — is saved to the structured profile
+   through the typed profile route. A baseline failure is shown, not
+   swallowed.
 
 1. The app builds a **typed submission** — `requestId`, dimension,
    questionnaire selections as `{axis, side}` references, and evidence
@@ -122,8 +139,17 @@ Provenance is collected, not inferred:
 | `third_party_url`               | Any URL — external content, untrusted               |
 | `named_preference`              | A list item the user typed (artist, tool)           |
 
+<<<<<<< HEAD
 Supplying text is not evidence of having written it, and list items do not
 automatically outrank ambiguous samples.
+=======
+- `routes/profile.ts` exposes GET plus `set_baseline` and `set_override` mutations in the plugin namespace.
+- `skills/taste/tools/update_profile.ts` owns deterministic aggregation, neutral priors, validation, lock-file coordination, and atomic writes.
+- `skills/taste/tools/read_profile.ts` is the assistant's read path. It resolves each axis to an effective position (a manual override wins over the learned position), names the confidence band, and omits the private evidence ledger.
+- `skills/taste/TOOLS.json` exposes the two skill tools. `update_profile` takes only qualitative learned-evidence inputs — dimension, axis, direction, strength, and reason — and enumerates every axis id it accepts, so the model never guesses one.
+- `hooks/post-tool-use.ts` publishes the `taste:profile` invalidation tag after successful learned-profile updates.
+- The app uses `window.vellum.fetch` only for `/x/plugins/taste/profile`, and subscribes to `taste:profile` to re-read canonical state.
+>>>>>>> origin/main
 
 ### Limits
 
@@ -182,16 +208,19 @@ byte-identical and that a fresh build matches the committed attestation. The
 one thing only a host change can add is installer-time verification of the
 generated dist against that attestation (see limitations).
 
+<<<<<<< HEAD
 The pinned esbuild (0.24.2) has an advisory affecting its development
 server; Attune uses one-shot builds only and matches the host's pinned
 version, so the dev server is never run.
 
 ## Surfaces
 
-One skill (`skills/taste`), one app (`apps/taste`), one route
-(`routes/taste.ts`). No hooks, no tools, no schedules, no network calls, no
-telemetry, no credential access, no shell execution, no dynamic code. The
-test suite asserts this list.
+One skill (`skills/taste`, with two skill-scoped tools: `read_profile`,
+`update_profile`), one app (`apps/taste`), two routes (`routes/taste.ts`,
+`routes/profile.ts`), and one hook (`hooks/post-tool-use.ts`, which only
+publishes the profile sync tag). No always-on model-visible tools, no
+schedules, no network calls, no telemetry, no credential access, no shell
+execution, no dynamic code. The test suite asserts this list.
 
 ## Platform limitations (honest edges)
 
@@ -211,12 +240,19 @@ test suite asserts this list.
 - **Conversational `remember` learning stays eventually consistent** —
   buffer then consolidation. Only the onboarding loop has the verified
   immediate guarantee.
+=======
+The tests cover prompt separation, final skill policy, static runtime safety, structured-profile invariants, the calibration round trip, and reproducible builds.
+>>>>>>> origin/main
 
 ## Install
 
 Copy into a workspace and restart the assistant (plugin surfaces register
 on the boot scan; routes resolve from disk per request):
 
+<<<<<<< HEAD
 ```
 cp -R attune "$VELLUM_WORKSPACE_DIR/plugins/attune"
 ```
+=======
+The plugin contributes the Taste skill, living-profile app, namespaced route, profile read and update tools, and invalidation hook.
+>>>>>>> origin/main

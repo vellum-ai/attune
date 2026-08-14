@@ -24,8 +24,8 @@ import { classifyUrl } from "./url";
 export const PAGE_BY_DIMENSION: Record<DimensionId, string> = {
   writing: "taste-writing",
   music: "taste-music",
-  visual: "taste-visual",
-  building: "taste-building",
+  "web-design": "taste-web-design",
+  "interior-design": "taste-interior-design",
 };
 
 // ── Provenance ─────────────────────────────────────────────────────────────

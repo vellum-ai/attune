@@ -70,25 +70,31 @@ export function showSplit(): void {
 
 const CANDIDATE_PLUGIN_DIRS = ["attune", "taste"] as const;
 
-let resolvedBase: string | null = null;
+let resolvedNamespace: string | null = null;
 
-async function routeBase(): Promise<string | null> {
+/** The plugin's route namespace (`/v1/x/plugins/<dir>`), probed once. */
+async function pluginNamespace(): Promise<string | null> {
   const hostFetch = bridge()?.fetch;
   if (!hostFetch) return null;
-  if (resolvedBase) return resolvedBase;
+  if (resolvedNamespace) return resolvedNamespace;
   for (const dir of CANDIDATE_PLUGIN_DIRS) {
-    const base = `/v1/x/plugins/${dir}/taste`;
+    const namespace = `/v1/x/plugins/${dir}`;
     try {
-      const response = await hostFetch(base);
+      const response = await hostFetch(`${namespace}/taste`);
       if (response.ok) {
-        resolvedBase = base;
-        return base;
+        resolvedNamespace = namespace;
+        return namespace;
       }
     } catch {
       // Try the next candidate.
     }
   }
   return null;
+}
+
+async function routeBase(): Promise<string | null> {
+  const namespace = await pluginNamespace();
+  return namespace ? `${namespace}/taste` : null;
 }
 
 /** The typed acknowledgment the route returns. */
@@ -205,10 +211,124 @@ export async function fetchCompletion(): Promise<Record<
   }
 }
 
-/** Re-fetch on the plugin's own sync tag. Returns an unsubscribe. */
+/** Re-fetch on the plugin's own sync tags. Returns an unsubscribe. */
 export function subscribeTasteChanges(onChange: () => void): () => void {
   const subscription = bridge()?.subscribe;
   if (!subscription) return () => undefined;
-  const unsubscribe = subscription({ tags: ["attune:taste"] }, () => onChange());
+  const unsubscribe = subscription(
+    { tags: ["attune:taste", "taste:profile"] },
+    () => onChange(),
+  );
   return typeof unsubscribe === "function" ? unsubscribe : () => undefined;
+}
+
+// ── Structured profile (the calibrated axis-level record) ──────────────────
+//
+// The profile route (`routes/profile.ts`) owns the locked, atomic
+// `profile.json` store. These calls go through the same probed namespace as
+// the taste route — the predecessor's hardcoded `/x/plugins/taste/profile`
+// path was blocked by the sandbox proxy (which only allows `/v1/x/…`) and
+// pointed at the disabled predecessor install. There is no fake-success
+// fallback: without the bridge these report unavailability.
+
+export type Confidence = "low" | "growing" | "established";
+
+export interface ProfileAxis {
+  id: string;
+  label: string;
+  leftLabel: string;
+  rightLabel: string;
+  leftWeight?: number;
+  rightWeight?: number;
+  learnedPosition?: number;
+  overridePosition?: number | null;
+  overrideUpdatedAt?: string | null;
+  confidence?: Confidence;
+  evidenceCount?: number;
+  updatedAt?: string;
+  lastReason?: string | null;
+}
+
+export interface ProfileDimension {
+  id: string;
+  label?: string;
+  baselineComplete: boolean;
+  axes: ProfileAxis[];
+}
+
+export interface TasteProfile {
+  schemaVersion: number;
+  revision: number;
+  dimensions: ProfileDimension[];
+}
+
+function normalizeProfile(payload: unknown): TasteProfile | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const value = payload as Partial<TasteProfile>;
+  if (!Array.isArray(value.dimensions)) return null;
+  return {
+    schemaVersion: Number(value.schemaVersion ?? 1),
+    revision: Number(value.revision ?? 0),
+    dimensions: value.dimensions as ProfileDimension[],
+  };
+}
+
+export async function fetchTasteProfile(): Promise<TasteProfile | null> {
+  const hostFetch = bridge()?.fetch;
+  const namespace = await pluginNamespace();
+  if (!hostFetch || !namespace) return null;
+  try {
+    const response = await hostFetch(`${namespace}/profile`);
+    if (!response.ok) return null;
+    return normalizeProfile(await response.json());
+  } catch {
+    return null;
+  }
+}
+
+export interface ProfileActionResult {
+  ok: boolean;
+  unavailable?: boolean;
+  error?: string;
+}
+
+async function postProfileAction(body: Record<string, unknown>): Promise<ProfileActionResult> {
+  const hostFetch = bridge()?.fetch;
+  const namespace = await pluginNamespace();
+  if (!hostFetch || !namespace) return { ok: false, unavailable: true };
+  try {
+    const response = await hostFetch(`${namespace}/profile`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const detail = (await response.json().catch(() => null)) as { error?: unknown } | null;
+      return {
+        ok: false,
+        error:
+          typeof detail?.error === "string"
+            ? detail.error
+            : `Profile update failed (${response.status})`,
+      };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Profile update failed" };
+  }
+}
+
+export function setBaseline(
+  dimensionId: string,
+  answers: Array<{ axisId: string; label: string; leftLabel: string; rightLabel: string; side: "left" | "right" }>,
+): Promise<ProfileActionResult> {
+  return postProfileAction({ action: "set_baseline", dimensionId, answers });
+}
+
+export function setOverride(
+  dimensionId: string,
+  axisId: string,
+  position: number | null,
+): Promise<ProfileActionResult> {
+  return postProfileAction({ action: "set_override", dimensionId, axisId, position });
 }

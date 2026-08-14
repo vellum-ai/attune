@@ -15,7 +15,14 @@ import type { OverflowError } from "../limits";
 import { buildSubmission, PAGE_BY_DIMENSION } from "../payload";
 import { runSubmission, type SubmissionPhase } from "../submission";
 import { markAnswered, markPersisted } from "../storage";
-import { fetchTasteStatus, hostAvailable, routeAvailable, showSplit, submitTaste } from "../vellum";
+import {
+  fetchTasteStatus,
+  hostAvailable,
+  routeAvailable,
+  setBaseline,
+  showSplit,
+  submitTaste,
+} from "../vellum";
 
 interface Props {
   dimension: Dimension;
@@ -148,6 +155,32 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
       return;
     }
     setOverflows([]);
+
+    // First persist the structured-profile baseline — only the pairs the
+    // user actually answered; an unanswered question is no evidence, not a
+    // default side. Repeating this on retry is safe: setting the same
+    // baseline twice converges to the same state.
+    if (routeAvailable()) {
+      const baseline = dimension.pairs
+        .filter((pair) => answers[pair.id] !== undefined)
+        .map((pair) => ({
+          axisId: pair.axis.id,
+          label: pair.axis.label,
+          leftLabel: pair.axis.leftLabel,
+          rightLabel: pair.axis.rightLabel,
+          side: answers[pair.id] === pair.a ? ("left" as const) : ("right" as const),
+        }));
+      const baselineResult = await setBaseline(dimension.id, baseline);
+      if (!baselineResult.ok && !baselineResult.unavailable) {
+        setPhase({
+          phase: "failed",
+          requestId: requestIdRef.current,
+          errors: [baselineResult.error ?? "Could not save the calibration baseline."],
+          canRetry: true,
+        });
+        return;
+      }
+    }
 
     const final = await runSubmission(
       built.submission,
@@ -305,10 +338,11 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
 
       {stage === "review" && (
         <p class="handoff-note">
-          Building sends your answers{hasSourceStep ? " and references" : ""} to your assistant, which
-          updates only the <code>{PAGE_BY_DIMENSION[dimension.id]}</code> memory page with short derived
-          preferences — never your raw samples. Submitted evidence does pass through the host and the
-          conversation layer like any message. Success shows only after the page is read back and verified.
+          Building saves your answers to the calibrated profile, then sends them
+          {hasSourceStep ? " with your references" : ""} to your assistant, which updates only the{" "}
+          <code>{PAGE_BY_DIMENSION[dimension.id]}</code> memory page with short derived preferences —
+          never your raw samples. Submitted evidence does pass through the host and the conversation
+          layer like any message. Success shows only after the page is read back and verified.
         </p>
       )}
     </section>

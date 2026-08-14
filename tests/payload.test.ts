@@ -17,15 +17,16 @@ const REQUEST_ID = "11111111-2222-4333-8444-555555555555";
 
 describe("data model", () => {
   test("all four canonical dimensions exist and map to distinct pages", () => {
-    expect(DIMENSIONS.map((d) => d.id).sort()).toEqual(["building", "music", "visual", "writing"]);
+    expect(DIMENSIONS.map((d) => d.id).sort()).toEqual(["interior-design", "music", "web-design", "writing"]);
     expect(Object.values(PAGE_BY_DIMENSION).sort()).toEqual([
-      "taste-building",
+      "taste-interior-design",
       "taste-music",
-      "taste-visual",
+      "taste-web-design",
       "taste-writing",
     ]);
     for (const dimension of DIMENSIONS) {
       expect(PAGE_BY_DIMENSION[dimension.id]).toBe(`taste-${dimension.id}`);
+      expect(PAGE_BY_DIMENSION[dimension.id]).toBe(dimension.page);
       expect(dimension.pairs.length).toBeGreaterThan(0);
       const ids = dimension.pairs.map((p) => p.id);
       expect(new Set(ids).size).toBe(ids.length);
@@ -108,16 +109,16 @@ describe("splitting and derivation", () => {
   });
 
   test("statements derive from the closed table keyed by axis+side", () => {
-    const building = dimensionById("building");
-    const statements = deriveStatements(building, [
-      { axis: "control", side: "a" },
-      { axis: "evidence", side: "b" },
+    const web = dimensionById("web-design");
+    const statements = deriveStatements(web, [
+      { axis: "web-density", side: "a" },
+      { axis: "web-navigation", side: "b" },
     ]);
     expect(statements).toHaveLength(2);
-    expect(statements[0]).toContain("raw control");
-    expect(statements[1]).toContain("quiet surface");
+    expect(statements[0]).toContain("spacious pages");
+    expect(statements[1]).toContain("unobtrusive navigation");
     for (const statement of statements) {
-      expect(statement.startsWith("For building work, prefers ")).toBe(true);
+      expect(statement.startsWith("For web design work, prefers ")).toBe(true);
     }
   });
 

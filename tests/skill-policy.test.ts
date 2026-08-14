@@ -17,17 +17,27 @@ const SKILL = readFileSync(
 );
 
 describe("read path", () => {
-  test("covers all four canonical dimensions", () => {
-    for (const page of ["taste-writing", "taste-music", "taste-visual", "taste-building"]) {
+  test("covers all four dimensions and their pages", () => {
+    for (const page of [
+      "taste-writing",
+      "taste-music",
+      "taste-web-design",
+      "taste-interior-design",
+    ]) {
       expect(SKILL).toContain(page);
     }
-    expect(SKILL).not.toContain("taste-web-design");
-    expect(SKILL).not.toContain("taste-interior-design");
   });
 
-  test("activates for technical builds, not only prose", () => {
-    expect(SKILL).toMatch(/including\s+technical builds/);
-    expect(SKILL).toMatch(/app, website, product, API/i);
+  test("reads the calibrated profile and the memory pages, both before drafting", () => {
+    expect(SKILL).toContain("read_profile");
+    expect(SKILL).toMatch(/Two reads, both before drafting/);
+    expect(SKILL).toMatch(/smallest relevant\s+set/);
+  });
+
+  test("manual overrides win over learned positions and confidence gates the lean", () => {
+    expect(SKILL).toContain("wins over the learned position");
+    expect(SKILL).toContain("`established` is a firm default");
+    expect(SKILL).toContain("no recorded preference carries no instruction");
   });
 
   test("excludes mechanical tasks", () => {
@@ -58,11 +68,7 @@ describe("read path", () => {
   });
 
   test("taste is applied silently", () => {
-    expect(SKILL).toContain("Apply it silently");
-  });
-
-  test("recalls the smallest relevant page set before drafting", () => {
-    expect(SKILL).toMatch(/smallest relevant\s+set/);
+    expect(SKILL).toMatch(/apply it silently, without narrating/);
   });
 });
 
@@ -72,23 +78,28 @@ describe("learning path", () => {
     expect(SKILL).toMatch(/consolidation, not instantly/);
   });
 
+  test("durable conversational reactions write both records", () => {
+    expect(SKILL).toContain("update_profile");
+    expect(SKILL).toMatch(/two\s+writes/);
+    expect(SKILL).toMatch(/Never invent\s+numeric precision/);
+  });
+
   test("one-off constraints are non-durable and not recorded", () => {
-    expect(SKILL).toContain("One-off project constraints");
-    expect(SKILL).toMatch(/One-off constraints are non-durable/);
+    expect(SKILL).toMatch(/One-off\s+project constraints are non-durable/);
   });
 
   test("contentless praise is not evidence", () => {
     expect(SKILL).toContain("Silence, acceptance, or contentless praise");
-    expect(SKILL).toContain("contentless\npraise teaches nothing");
+    expect(SKILL).toMatch(/contentless\s+praise teaches nothing/);
   });
 
   test("identity rules cannot be overwritten by taste", () => {
     expect(SKILL).toContain("never be rewritten as mutable");
-    expect(SKILL).toContain("remain\nauthoritative");
+    expect(SKILL).toMatch(/remain\s+authoritative/);
   });
 
   test("provenance distinguishes claimed authorship from unknown origin", () => {
-    expect(SKILL).toContain("Sample the user claims as their own");
+    expect(SKILL).toMatch(/claims as their own/);
     expect(SKILL).toContain("supplying text is not authorship");
   });
 

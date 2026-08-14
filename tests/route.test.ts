@@ -137,20 +137,20 @@ describe("persistence acknowledgment", () => {
     expect(fresh).toContain("states findings flatly");
   });
 
-  test("a missing taste-building page is created through the same production mutation path", async () => {
-    expect(existsSync(conceptPath("taste-building"))).toBe(false);
+  test("a missing taste-interior-design page is created through the same production mutation path", async () => {
+    expect(existsSync(conceptPath("taste-interior-design"))).toBe(false);
     const response = await post(
       submissionBody({
-        dimension: "building",
-        selections: [{ axis: "control", side: "a" }],
+        dimension: "interior-design",
+        selections: [{ axis: "interior-plan", side: "a" }],
         sources: [],
       }),
     );
     expect(response.status).toBe(200);
     const ack = (await response.json()) as { stage: string; page: string };
     expect(ack.stage).toBe("persisted");
-    expect(ack.page).toBe("taste-building");
-    expect(existsSync(conceptPath("taste-building"))).toBe(true);
+    expect(ack.page).toBe("taste-interior-design");
+    expect(existsSync(conceptPath("taste-interior-design"))).toBe(true);
     expect(turnCalls).toHaveLength(1); // created by the turn, not by a fixture
   });
 
@@ -178,7 +178,7 @@ describe("persistence acknowledgment", () => {
   test("a turn that also touches another taste page fails even when the target was written", async () => {
     turnBehavior = async (prompt) => {
       await compliantAssistant(prompt);
-      writeFileSync(conceptPath("taste-visual"), "# taste-visual\n- sneaky extra entry\n");
+      writeFileSync(conceptPath("taste-web-design"), "# taste-web-design\n- sneaky extra entry\n");
       return {};
     };
     const response = await post(submissionBody());
@@ -236,7 +236,7 @@ describe("idempotency", () => {
 
 describe("validation", () => {
   test("unknown dimensions are rejected", async () => {
-    const response = await post(submissionBody({ dimension: "web-design" }));
+    const response = await post(submissionBody({ dimension: "building" }));
     expect(response.status).toBe(400);
   });
 

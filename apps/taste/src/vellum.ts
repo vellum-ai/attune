@@ -34,6 +34,18 @@ export interface TasteProfile {
   dimensions: ProfileDimension[];
 }
 
+export interface AvatarTraits {
+  bodyShape: string;
+  eyeStyle: string;
+  color: string;
+}
+
+export interface TasteAvatar {
+  kind: "character" | "image" | "none";
+  traits: AvatarTraits | null;
+  image: string | null;
+}
+
 interface VellumResponseLike {
   ok?: boolean;
   status?: number;
@@ -119,6 +131,26 @@ function normalizeProfile(payload: unknown): TasteProfile | null {
     revision: Number(value.revision ?? 0),
     dimensions: normalizeDimensions(value.dimensions),
   };
+}
+
+export async function fetchTasteAvatar(): Promise<TasteAvatar | null> {
+  const hostFetch = bridge()?.fetch;
+  if (!hostFetch) return null;
+  try {
+    const response = await hostFetch("/x/plugins/taste/avatar");
+    const payload = normalizePayload(await responsePayload(response)) as Partial<TasteAvatar> | null;
+    if (!payload || typeof payload !== "object") return null;
+    const traits = payload.traits && typeof payload.traits === "object"
+      ? payload.traits as AvatarTraits
+      : null;
+    return {
+      kind: payload.kind === "character" || payload.kind === "image" ? payload.kind : "none",
+      traits,
+      image: typeof payload.image === "string" ? payload.image : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchTasteProfile(): Promise<TasteProfile | null> {

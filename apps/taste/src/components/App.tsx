@@ -1,11 +1,14 @@
 /**
- * The app's two modes: a living profile dashboard and the calibration flow.
- * The dashboard is profile-first once the backend has a baseline for any
- * dimension, while the local completion store keeps the preview useful outside
- * Vellum.
+ * The app's two modes: a taste dashboard and the calibration flow.
+ * The dashboard appears after the backend has a baseline for any dimension,
+ * while the local completion store keeps the preview useful outside Vellum.
  */
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
+
+import { CompanionField } from "./companion/AvatarWitness";
+import { Button } from "./ui/Button";
+import { Card } from "./ui/Card";
 
 import { DIMENSIONS, dimensionById, type DimensionId } from "../data";
 import {
@@ -23,10 +26,31 @@ import { Flow } from "./Flow";
 
 export function App() {
   const [open, setOpen] = useState<DimensionId | null>(null);
+  const [takeover, setTakeover] = useState<DimensionId | null>(null);
+  const openingRef = useRef(false);
+  const transitionTimerRef = useRef<number | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(prefersReducedMotion);
   const [profile, setProfile] = useState<TasteProfile | null>(null);
   const [completed, setCompleted] = useState(readCompleted);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const openDimension = (id: DimensionId) => {
+    if (openingRef.current || open !== null) return;
+    openingRef.current = true;
+    if (reducedMotion || prefersReducedMotion()) {
+      openingRef.current = false;
+      setOpen(id);
+      return;
+    }
+    setTakeover(id);
+    transitionTimerRef.current = window.setTimeout(() => {
+      transitionTimerRef.current = null;
+      openingRef.current = false;
+      setTakeover(null);
+      setOpen(id);
+    }, 360);
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -34,7 +58,7 @@ export function App() {
     try {
       setProfile(await fetchTasteProfile());
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Could not load the living profile.");
+      setLoadError(error instanceof Error ? error.message : "Could not load Taste.");
     } finally {
       setLoading(false);
     }
@@ -42,6 +66,18 @@ export function App() {
 
   useEffect(() => {
     void refresh();
+    const media = typeof window !== "undefined" ? window.matchMedia?.("(prefers-reduced-motion: reduce)") : undefined;
+    const updateMotion = () => setReducedMotion(media?.matches === true);
+    media?.addEventListener?.("change", updateMotion);
+    return () => {
+      media?.removeEventListener?.("change", updateMotion);
+      if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
+      transitionTimerRef.current = null;
+      openingRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     return subscribeTasteProfile((next) => {
       setProfile(next);
       setLoading(false);
@@ -72,7 +108,8 @@ export function App() {
       <ProfileDashboard
         profile={profile!}
         onRefresh={refresh}
-        onCalibrate={(id) => setOpen(id)}
+        onCalibrate={openDimension}
+        takeoverId={takeover}
       />
     );
   }
@@ -81,18 +118,23 @@ export function App() {
     <CalibrationHome
       completed={completed}
       loadError={loadError}
-      onOpen={setOpen}
+      onOpen={openDimension}
       onRefresh={refresh}
+      takeoverId={takeover}
     />
   );
+}
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
 function LoadingScreen() {
   return (
     <main class="home state-screen" aria-live="polite" aria-busy="true">
-      <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste profiles</span>
+      <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste</span>
       <div class="loading-block"><span class="loading-line" /><span class="loading-line short" /><span class="loading-line shorter" /></div>
-      <p class="state-copy">Reading the living profile…</p>
+      <p class="state-copy">Loading…</p>
     </main>
   );
 }
@@ -102,20 +144,23 @@ function CalibrationHome({
   loadError,
   onOpen,
   onRefresh,
+  takeoverId,
 }: {
   completed: Record<string, number>;
   loadError: string | null;
   onOpen: (id: DimensionId) => void;
   onRefresh: () => void;
+  takeoverId: DimensionId | null;
 }) {
   const anyBuilt = Object.keys(completed).length > 0;
 
   return (
-    <main class="home">
+    <main class={`home${takeoverId ? " has-takeover" : ""}`}>
+      <CompanionField phase="idle" />
       <header class="home-head">
-        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste profiles</span>
-        <h1>Teach your assistant what good feels like.</h1>
-        <p class="lede">Choose a dimension, make a few clear calls, and save the result as a private preference profile.</p>
+        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste</span>
+        <h1>Show Vellum what you like.</h1>
+        <p class="lede">Pick a category. Make a few choices. Vellum remembers.</p>
       </header>
 
       {loadError && <StatusNotice tone="error" message={loadError} actionLabel="Try again" onAction={onRefresh} />}
@@ -123,10 +168,9 @@ function CalibrationHome({
       <section class="dimension-section" aria-labelledby="dimension-heading">
         <div class="section-heading">
           <div>
-            <p class="section-label">Build a baseline</p>
-            <h2 id="dimension-heading">Where do you want to start?</h2>
+            <h2 id="dimension-heading">Start with a category</h2>
           </div>
-          <span class="section-count">{DIMENSIONS.length} profiles</span>
+
         </div>
 
         <div class="cards">
@@ -139,22 +183,25 @@ function CalibrationHome({
             return (
               <button
                 key={dimension.id}
-                class={`dimension-card v-card${isComplete ? " is-complete" : ""}`}
+                class={`dimension-card ui-button ui-button-outlined${isComplete ? " is-complete" : ""}${takeoverId === dimension.id ? " is-takeover-target" : ""}`}
+                data-slot="card"
                 type="button"
                 data-dimension={dimension.id}
                 onClick={() => onOpen(dimension.id)}
               >
                 <span class="dimension-card-top">
-                  <span class="dimension-icon" aria-hidden="true"><span /></span>
+                  <span class="dimension-icon" aria-hidden="true"><span class="dimension-icon-core" /></span>
                   <span class={`status-pill${isComplete ? " complete" : ""}`}>
-                    {isComplete ? "Saved locally" : hasPreviousProfile ? "Previous pass" : "Not started"}
+                    {isComplete ? "Saved" : hasPreviousProfile ? "In progress" : "New"}
                   </span>
                 </span>
-                <span class="dimension-name">{dimension.label}</span>
-                <span class="dimension-blurb">{dimension.blurb}</span>
+                <span class="dimension-card-body">
+                  <span class="dimension-name">{dimension.label}</span>
+                  <span class="dimension-blurb">{dimension.blurb}</span>
+                </span>
                 <span class="dimension-card-bottom">
-                  <span class="dimension-meta">{dimension.pairs.length} questions · about {minutes} min</span>
-                  <span class="dimension-cta">{hasPreviousProfile ? "Refine" : "Start"} <span aria-hidden="true">→</span></span>
+                  <span class="dimension-meta">{dimension.pairs.length} picks · about {minutes} min</span>
+                  <span class="dimension-cta">{hasPreviousProfile ? "Continue" : "Start"} <span aria-hidden="true">→</span></span>
                 </span>
               </button>
             );
@@ -163,18 +210,24 @@ function CalibrationHome({
       </section>
 
       {anyBuilt && (
-        <aside class="memory-check" aria-label="Saved taste profiles">
-          <div>
-            <p class="section-label">Saved locally</p>
-            <p>Preview mode keeps your completion state here. In Vellum, the living profile takes over after the first baseline is saved.</p>
-          </div>
-          <button class="v-button secondary" type="button" onClick={() => {
-            relayPrompt("What do you have recorded about my taste so far? Read the [[taste-writing]], [[taste-music]], [[taste-web-design]] and [[taste-interior-design]] memory pages and tell me what each one says — plainly, and say which ones are still thin.");
-            if (hostAvailable()) showSplit();
-          }}>Check memory <span aria-hidden="true">→</span></button>
-        </aside>
+      <aside class="memory-check" aria-label="Taste memory">
+        <Button variant="outlined" onClick={() => {
+          relayPrompt("What do you have recorded about my taste so far? Read the [[taste-writing]], [[taste-music]], [[taste-web-design]] and [[taste-interior-design]] memory pages and tell me what each one says plainly.");
+          if (hostAvailable()) showSplit();
+        }}>Ask Vellum what it remembers</Button>
+      </aside>
       )}
+      {takeoverId && <TransitionOverlay />}
     </main>
+  );
+}
+
+function TransitionOverlay() {
+  return (
+    <div class="transition-screen transition-overlay" aria-live="polite">
+      <CompanionField phase="takeover" />
+
+    </div>
   );
 }
 
@@ -182,10 +235,12 @@ function ProfileDashboard({
   profile,
   onRefresh,
   onCalibrate,
+  takeoverId,
 }: {
   profile: TasteProfile;
   onRefresh: () => void;
   onCalibrate: (id: DimensionId) => void;
+  takeoverId: DimensionId | null;
 }) {
   const profileDimensions = DIMENSIONS.map((metadata) => profile.dimensions.find((dimension) => dimension.id === metadata.id) ?? {
     id: metadata.id,
@@ -224,7 +279,7 @@ function ProfileDashboard({
     const result = await setOverride(selected.id, axis.id, position);
     setSavingAxis(null);
     if (result.ok) {
-      setActionMessage({ tone: "success", text: position === null ? "Current preference cleared." : "Current preference saved." });
+      setActionMessage({ tone: "success", text: position === null ? "Using learned setting." : "Saved." });
       onRefresh();
     } else {
       setActionMessage({ tone: "error", text: result.error ?? "Could not save this preference." });
@@ -232,11 +287,12 @@ function ProfileDashboard({
   };
 
   return (
-    <main class="home profile-home">
+    <main class={`home profile-home${takeoverId ? " has-takeover" : ""}`}>
+      <CompanionField phase="idle" />
       <header class="home-head profile-head">
-        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste / living profile</span>
-        <h1>What good feels like, lately.</h1>
-        <p class="lede">Your learned profile is a working sketch, not a verdict. Adjust the current preference when your taste moves. The evidence stays visible underneath.</p>
+        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste</span>
+        <h1>What Vellum knows about your taste.</h1>
+        <p class="lede">This is a starting point. Change anything that no longer feels right.</p>
       </header>
 
       <div class="profile-toolbar">
@@ -255,45 +311,44 @@ function ProfileDashboard({
             </button>
           ))}
         </div>
-        <span class="revision-note">Revision {profile.revision}</span>
+
       </div>
 
-      {savingAxis && <StatusNotice tone="success" message="Saving current preference…" />}
+      {savingAxis && <StatusNotice tone="success" message="Saving…" />}
       {actionMessage && <StatusNotice tone={actionMessage.tone} message={actionMessage.text} />}
 
       {!selected.baselineComplete ? (
-        <section class="profile-board empty-profile" aria-labelledby="profile-heading">
+        <Card class="profile-board empty-profile" aria-labelledby="profile-heading">
           <div class="profile-board-head">
             <div>
-              <p class="section-label">{metadata.label} / no baseline yet</p>
-              <h2 id="profile-heading">Give this dimension a first shape.</h2>
+              <h2 id="profile-heading">Start this category.</h2>
             </div>
-            <button class="v-button primary" type="button" onClick={() => onCalibrate(selected.id as DimensionId)}>Calibrate <span aria-hidden="true">↗</span></button>
+            <Button variant="primary" onClick={() => onCalibrate(selected.id as DimensionId)}>Set up {metadata.label}</Button>
           </div>
-          <p class="empty-profile-copy">Answer the short calibration set first. Once there is a baseline, this dashboard will show the learned read, confidence, and current preference separately.</p>
-        </section>
+          <p class="empty-profile-copy">Make a few choices to give it a shape.</p>
+        </Card>
       ) : (
         <>
-          <section class="profile-board" aria-labelledby="profile-heading">
+          <Card class="profile-board" aria-labelledby="profile-heading">
             <div class="profile-board-head">
               <div>
-                <p class="section-label">{metadata.label} / taste print</p>
-                <h2 id="profile-heading">A shape, not a score.</h2>
+                <p class="section-label">{metadata.label}</p>
+                <h2 id="profile-heading">Your taste so far</h2>
               </div>
-              <button class="v-button secondary" type="button" onClick={() => onCalibrate(selected.id as DimensionId)}>Calibrate <span aria-hidden="true">↗</span></button>
+              <Button variant="outlined" onClick={() => onCalibrate(selected.id as DimensionId)}>Fine-tune</Button>
             </div>
             <TastePrint axes={axes} />
-          </section>
+          </Card>
 
           <section class="axis-section" aria-labelledby="axis-heading">
             <div class="section-heading axis-heading">
               <div>
-                <p class="section-label">Editable axes</p>
-                <h2 id="axis-heading">Where should this move?</h2>
+                <p class="section-label">Fine-tune</p>
+                <h2 id="axis-heading">Anything to change?</h2>
               </div>
-              <span class="section-count">{axes.length} signals</span>
+              <span class="section-count">{axes.length} preferences</span>
             </div>
-            <p class="axis-explainer">The pink witness is what the profile learned. The cobalt fixture is your current preference. Moving the slider adds an override, it does not erase the evidence.</p>
+            <p class="axis-explainer">Pink shows what Vellum learned. Blue shows your current setting.</p>
             <div class="axis-list">
               {axes.map((axis) => (
                 <AxisRow key={axis.id} axis={axis} saving={savingAxis === axis.id} onChange={(position) => void updateAxis(axis, position)} />
@@ -302,16 +357,17 @@ function ProfileDashboard({
           </section>
         </>
       )}
+      {takeoverId && <TransitionOverlay />}
     </main>
   );
 }
 
 function TastePrint({ axes }: { axes: ProfileAxis[] }) {
   return (
-    <div class="taste-print" aria-label="Taste print. Each strip is an independent preference axis.">
+    <div class="taste-print" aria-label="A quick read of your preferences.">
       <div class="print-legend" aria-hidden="true">
-        <span><i class="learned-dot" />Learned witness</span>
-        <span><i class="current-dot" />Current preference</span>
+        <span><i class="learned-dot" />Pink learned</span>
+        <span><i class="current-dot" />Blue current</span>
       </div>
       <div class="print-strips">
         {axes.map((axis, index) => {
@@ -354,9 +410,9 @@ function AxisRow({ axis, saving, onChange }: { axis: ProfileAxis; saving: boolea
       <div class="axis-row-head">
         <div>
           <h3>{axis.label}</h3>
-          <p>{axis.evidenceCount ?? 0} evidence signal{axis.evidenceCount === 1 ? "" : "s"}{axis.lastReason ? ` · ${axis.lastReason}` : " · baseline only"}</p>
+          <p>{axis.evidenceCount ? "Learned" : "Not enough input yet"}</p>
         </div>
-        <span class={`axis-status${hasOverride ? " adjusted" : ""}`}>{isDirty ? "Adjustment ready" : hasOverride ? "Current set" : "Following evidence"}</span>
+        <span class={`axis-status${hasOverride ? " adjusted" : ""}`}>{isDirty ? "Unsaved" : hasOverride ? "Adjusted" : "Using learned setting"}</span>
       </div>
       <div class="axis-range-labels"><span>{axis.leftLabel}</span><span>{axis.rightLabel}</span></div>
       <div class="axis-range-wrap">
@@ -370,7 +426,7 @@ function AxisRow({ axis, saving, onChange }: { axis: ProfileAxis; saving: boolea
           step="1"
           value={draft}
           aria-label={`${axis.label}. Set my current preference from ${axis.leftLabel} to ${axis.rightLabel}`}
-          aria-valuetext={`${positionLabel(draft)}. ${isDirty ? "Adjustment ready to save on release" : hasOverride ? "Current preference" : "Following learned evidence"}.`}
+          aria-valuetext={`${positionLabel(draft)}. ${isDirty ? "Unsaved" : hasOverride ? "Adjusted" : "Using learned setting"}.`}
           disabled={saving}
           onInput={(event) => setDraft(Number((event.target as HTMLInputElement).value))}
           onChange={(event) => onChange(Number((event.target as HTMLInputElement).value))}
@@ -378,8 +434,8 @@ function AxisRow({ axis, saving, onChange }: { axis: ProfileAxis; saving: boolea
         <span class={`current-marker${isDirty ? " draft" : ""}`} style={{ left: `${draft}%` }} aria-hidden="true" />
       </div>
       <div class="axis-row-foot">
-        <span class="axis-reading">My current preference: {positionLabel(draft)} · learned: {positionLabel(learned)} · confidence: {confidenceLabel(axis.confidence)}</span>
-        {hasOverride && <button class="clear-override" type="button" disabled={saving} onClick={() => onChange(null)}>Clear current preference</button>}
+        <span class="axis-reading">{isDirty ? "Unsaved" : hasOverride ? "Adjusted" : "Using learned setting"}</span>
+        {hasOverride && <button class="clear-override" type="button" disabled={saving} onClick={() => onChange(null)}>Use learned setting</button>}
       </div>
     </article>
   );

@@ -88,13 +88,33 @@ describe("runtime source static safety", () => {
     }
   });
 
+  test("avatar witness stays decorative and has no orbit decoration", () => {
+    const avatar = readFileSync(join(SRC_DIR, "components", "companion", "AvatarWitness.tsx"), "utf-8");
+    const styles = readFileSync(join(SRC_DIR, "styles.css"), "utf-8");
+    expect(avatar).toContain('aria-hidden="true"');
+    expect(styles).toContain(".avatar-witness");
+    expect(styles).toContain("pointer-events: none");
+    expect(avatar).toContain("prefers-reduced-motion");
+    expect(avatar).toContain("data-blinking");
+    for (const removed of ["companion-wave", "wave-drift", "witness-wave", "choice-bloom", "question-step::before", "question-witness-bay::after", "dimension-card::after", "dimension-icon-line", "radial-gradient"]) {
+      expect(styles).not.toContain(removed);
+      expect(avatar).not.toContain(removed);
+    }
+  });
+
+  test("summary uses short labels instead of classifier means", () => {
+    const flow = readFileSync(join(SRC_DIR, "components", "Flow.tsx"), "utf-8");
+    expect(flow).toContain("option.summary");
+    expect(flow).not.toContain("sentenceCase(option.means)");
+  });
+
   test("the host fetch bridge is scoped to the Taste profile route", () => {
     const vellum = readFileSync(join(SRC_DIR, "vellum.ts"), "utf-8");
     const routes = [...vellum.matchAll(/hostFetch\(\s*"([^"]+)"/g)].map(
       (match) => match[1],
     );
     expect(routes.length).toBeGreaterThan(0);
-    expect(new Set(routes)).toEqual(new Set(["/x/plugins/taste/profile"]));
+    expect(new Set(routes)).toEqual(new Set(["/x/plugins/taste/profile", "/x/plugins/taste/avatar"]));
     expect(vellum).not.toMatch(/\bwindow\.fetch\s*\(/);
   });
 });

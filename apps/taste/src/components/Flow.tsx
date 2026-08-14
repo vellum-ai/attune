@@ -8,6 +8,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { Dimension, Option, Pair } from "../data";
 import { buildPrompt } from "../prompt";
 import { markCompleted, relayPrompt, showSplit, hostAvailable, setBaseline } from "../vellum";
+import { AvatarWitness, CompanionField } from "./companion/AvatarWitness";
+import { Button } from "./ui/Button";
+import { Card } from "./ui/Card";
+import { ChoiceGroup } from "./ui/ChoiceGroup";
+import { ProgressBar } from "./ui/ProgressBar";
 
 interface Props {
   dimension: Dimension;
@@ -28,6 +33,7 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
   const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [transitioning, setTransitioning] = useState(false);
+  const [keyboardReady, setKeyboardReady] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const transitionTimerRef = useRef<number | null>(null);
   const transitionLockRef = useRef(false);
@@ -39,7 +45,7 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
   const hasSourceStep = dimension.sources.kind !== "none";
   const stageTotal = total + (hasSourceStep ? 2 : 1);
   const stagePosition = isQuestionStage ? step + 1 : stage === "sources" ? total + 1 : stageTotal;
-  const stageLabel = isQuestionStage ? `Question ${step + 1} of ${total}` : stage === "sources" ? "References" : "Summary";
+  const stageLabel = isQuestionStage ? `Pick ${step + 1} of ${total}` : stage === "sources" ? "Examples" : "Your picks";
 
   useLayoutEffect(() => {
     stageRef.current?.focus({ preventScroll: true });
@@ -53,6 +59,7 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
     transitionTimerRef.current = null;
     transitionLockRef.current = false;
     setTransitioning(false);
+    setKeyboardReady(false);
     if (step < total - 1) {
       setStep((value) => value + 1);
     } else {
@@ -60,11 +67,16 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
     }
   };
 
-  const choose = (pairId: string, option: Option) => {
+  const choose = (pairId: string, option: Option, advance: boolean) => {
     if (transitionLockRef.current) return;
-    transitionLockRef.current = true;
     setAnswers((prev) => ({ ...prev, [pairId]: option }));
 
+    if (!advance) {
+      setKeyboardReady(true);
+      return;
+    }
+
+    transitionLockRef.current = true;
     if (prefersReducedMotion()) {
       commitQuestionTransition();
       return;
@@ -85,6 +97,7 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
   };
 
   const previous = () => {
+    setKeyboardReady(false);
     if (transitionTimerRef.current !== null) {
       window.clearTimeout(transitionTimerRef.current);
       transitionTimerRef.current = null;
@@ -139,20 +152,17 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
     return (
       <section class="flow" data-dimension={dimension.id}>
         <Header dimension={dimension} onExit={onExit} />
-        <div class="stage-card done-card v-card" ref={stageRef} tabIndex={-1}>
+        <Card class="stage-card done-card" ref={stageRef} tabIndex={-1}>
           <span class="done-mark" aria-hidden="true">✓</span>
           <div class="done-copy">
-            <p class="section-label">Profile saved</p>
-            <h2>{hostAvailable() ? "Your assistant has it." : "Your profile is ready."}</h2>
-            <p>
-              {hostAvailable()
-                ? `Your ${dimension.label.toLowerCase()} preferences are being refined in memory. Revisit this profile whenever your taste shifts.`
-                : "This preview is outside Vellum, so the assistant hand-off was skipped. Your local flow is complete."}
-            </p>
+            <p class="section-label">Saved</p>
+            <h2>Vellum has it.</h2>
+            <p>Vellum will use these preferences going forward.</p>
           </div>
-          {dimension.sources.kind === "none" && <p class="reference-note">{dimension.sources.hint}</p>}
-          <button class="v-button primary" type="button" onClick={onExit}>Back to profiles</button>
-        </div>
+          {dimension.sources.kind === "none" && <p class="reference-note">Add examples in chat later.</p>}
+          <Button variant="primary" onClick={onExit}>Back to Taste</Button>
+        </Card>
+        <CompanionField phase="return" />
       </section>
     );
   }
@@ -161,21 +171,15 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
     <section class="flow" data-dimension={dimension.id}>
       <Header dimension={dimension} onExit={onExit} />
 
-      <div class="stage-card v-card" ref={stageRef} tabIndex={-1} aria-busy={transitioning}>
+      <Card class={`stage-card${transitioning ? " is-transitioning" : ""}`} ref={stageRef} tabIndex={-1} aria-busy={transitioning}>
         <div class="flow-progress">
           <div class="progress-copy" aria-live="polite">
             <span>{stageLabel}</span>
           </div>
-          <div
-            class="progress-track"
-            role="progressbar"
-            aria-valuemin={1}
-            aria-valuemax={stageTotal}
-            aria-valuenow={stagePosition}
-            aria-valuetext={stageLabel}
-          >
-            <span style={{ width: `${(stagePosition / stageTotal) * 100}%` }} />
-          </div>
+          <ProgressBar
+            value={(stagePosition / stageTotal) * 100}
+            label={stageLabel}
+          />
         </div>
 
         <div class="stage-content">
@@ -183,7 +187,7 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
             <QuestionStep
               pair={currentPair}
               answer={answers[currentPair.id]}
-              onChoose={(option) => choose(currentPair.id, option)}
+              onChoose={(option, advance) => choose(currentPair.id, option, advance)}
               transitioning={transitioning}
             />
           )}
@@ -204,25 +208,25 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
           {stage === "review" && <TasteSummary dimension={dimension} answers={answers} />}
         </div>
 
-        {(stage !== "questions" || step > 0) && <div class="flow-actions">
-          <button class="v-button ghost" type="button" onClick={previous}>Back</button>
+        {(stage !== "questions" || step > 0 || keyboardReady) && <div class="flow-actions">
+          <Button variant="ghost" onClick={previous}>Back</Button>
+          {stage === "questions" && keyboardReady && (
+            <Button variant="primary" onClick={() => { transitionLockRef.current = true; commitQuestionTransition(); }}>Next</Button>
+          )}
           {stage === "sources" && (
-            <button class="v-button primary" type="button" onClick={() => setStage("review")}>
-              View summary <span aria-hidden="true">→</span>
-            </button>
+            <Button variant="primary" onClick={() => setStage("review")}>
+              See your picks <span aria-hidden="true">→</span>
+            </Button>
           )}
           {stage === "review" && (
-            <button class="v-button primary" type="button" disabled={saveState === "saving"} onClick={build}>
-              {saveState === "saving" ? "Saving baseline…" : "Save profile"} <span aria-hidden="true">→</span>
-            </button>
+            <Button variant="primary" disabled={saveState === "saving"} onClick={build}>
+              {saveState === "saving" ? "Saving…" : "Save to Vellum"} <span aria-hidden="true">→</span>
+            </Button>
           )}
         </div>}
         {stage === "review" && saveError && <p class="save-error" role="alert">{saveError}</p>}
-      </div>
+      </Card>
 
-      {stage === "review" && !hostAvailable() && (
-        <p class="handoff-note">Preview mode: saving will finish the local flow without sending anything.</p>
-      )}
     </section>
   );
 }
@@ -230,23 +234,31 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
 function Header({ dimension, onExit }: { dimension: Dimension; onExit: () => void }) {
   return (
     <header class="flow-head">
-      <button class="back-link" type="button" onClick={onExit}>← All profiles</button>
+      <Button variant="ghost" class="back-link" onClick={onExit}>← Back to Taste</Button>
       <div class="flow-head-meta">
-        <span class="registration-note" aria-hidden="true">profile / calibration</span>
         <span class="dimension-pill"><span aria-hidden="true" />{dimension.label}</span>
       </div>
     </header>
   );
 }
 
-function QuestionStep({ pair, answer, onChoose, transitioning }: { pair: Pair; answer?: Option; onChoose: (option: Option) => void; transitioning: boolean }) {
+function QuestionStep({ pair, answer, onChoose, transitioning }: { pair: Pair; answer?: Option; onChoose: (option: Option, advance: boolean) => void; transitioning: boolean }) {
   const questionId = `question-${pair.id}`;
 
+  const selectedSide = answer === pair.a ? "left" : answer === pair.b ? "right" : "idle";
+
   return (
-    <fieldset class="question-step">
-      <legend id={questionId}>{pair.question}</legend>
-      <p class="question-prompt">Pick the one you would rather live with.</p>
-      <div class="choice-pair" role="radiogroup" aria-labelledby={questionId}>
+    <fieldset class="question-step" data-selected-side={selectedSide}>
+      <div class="question-head">
+        <div class="question-copy">
+          <legend id={questionId}>{pair.question}</legend>
+          <p class="question-prompt">Which feels more like you?</p>
+        </div>
+        <div class="question-witness-bay">
+          <AvatarWitness mood={selectedSide === "left" ? "left" : selectedSide === "right" ? "right" : "idle"} />
+        </div>
+      </div>
+      <ChoiceGroup labelledBy={questionId}>
         {(["a", "b"] as const).map((side) => {
           const option = pair[side];
           const picked = answer === option;
@@ -259,15 +271,14 @@ function QuestionStep({ pair, answer, onChoose, transitioning }: { pair: Pair; a
               aria-checked={picked}
               aria-disabled={transitioning}
               disabled={transitioning}
-              onClick={() => onChoose(option)}
+              onClick={(event) => onChoose(option, event.detail > 0)}
             >
               <span class="choice-mark" aria-hidden="true">{picked ? "✓" : side.toUpperCase()}</span>
               <span class="choice-body">{option.body}</span>
-              <span class="choice-register" aria-hidden="true">{side === "a" ? "01" : "02"}</span>
             </button>
           );
         })}
-      </div>
+      </ChoiceGroup>
     </fieldset>
   );
 }
@@ -296,14 +307,13 @@ function SourceStep({
   return (
     <div class="source-step">
       <div class="stage-heading">
-        <span class="optional-pill">Optional</span>
-        <h2>{dimension.sources.label}</h2>
-        <p>References make the profile more specific. You can also skip this and keep moving.</p>
+        <h2>{dimension.sources.kind === "list" ? "Artists" : "Examples or links"}</h2>
+        <p>Have examples? Add them here, or skip.</p>
       </div>
 
       {dimension.sources.kind === "text" && (
         <div class="field-group">
-          <label for={inputId}>Samples or links</label>
+          <label for={inputId}>Examples or links</label>
           <textarea id={inputId} class="field" rows={7} placeholder={dimension.sources.placeholder} value={sourceText} onInput={(e) => setSourceText((e.target as HTMLTextAreaElement).value)} />
         </div>
       )}
@@ -320,7 +330,7 @@ function SourceStep({
           </div>
           <div class="input-row">
             <input id={inputId} class="field" type="text" placeholder={dimension.sources.placeholder} value={draftItem} onInput={(e) => setDraftItem((e.target as HTMLInputElement).value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addItem(); } }} />
-            <button class="v-button secondary add-button" type="button" onClick={addItem} disabled={!draftItem.trim()}>Add</button>
+            <Button variant="outlined" class="add-button" onClick={addItem} disabled={!draftItem.trim()}>Add</Button>
           </div>
         </div>
       )}
@@ -329,8 +339,7 @@ function SourceStep({
         <div class="reference-card">
           <span class="reference-icon" aria-hidden="true">＋</span>
           <div>
-            <strong>Add visual references in chat</strong>
-            <p>Save this baseline first, then attach a few sites, screenshots, rooms, or objects for a sharper read.</p>
+            <strong>Add examples in chat later</strong>
           </div>
         </div>
       )}
@@ -352,27 +361,26 @@ function TasteSummary({ dimension, answers }: { dimension: Dimension; answers: A
   return (
     <div class="summary-wrap" aria-live="polite">
       <div class="stage-heading summary-heading">
-        <span class="optional-pill">Your read</span>
-        <h2>Your {dimension.label.toLowerCase()} profile has a clear shape.</h2>
-        <p>These are the strongest signals from this pass. Save them now, then refine with references over time.</p>
+        <h2>Here’s what stood out.</h2>
+        <p>A few things stood out. You can change them anytime.</p>
       </div>
 
-      <div class="summary-traits" aria-label="Key taste signals">
+      <div class="summary-traits" aria-label="Key preferences">
         {featured.map(({ option, pair }) => (
           <div class="trait-card" key={pair.id}>
             <span class="trait-dot" aria-hidden="true" />
-            <span>{sentenceCase(option.means)}</span>
+            <span>{option.summary}</span>
           </div>
         ))}
       </div>
 
       <details class="answer-details">
-        <summary>See all {selected.length} answers <span class="details-icon" aria-hidden="true" /></summary>
+        <summary>See all {selected.length} picks <span class="details-icon" aria-hidden="true" /></summary>
         <div class="answer-list">
           {selected.map(({ pair, option, index }) => (
             <div class="answer-row" key={pair.id}>
-              <span>{formatSignal(pair.id, index)}</span>
-              <p>{option.means}</p>
+              <span>{pair.axis.label}</span>
+              <p>{option.summary}</p>
             </div>
           ))}
         </div>
@@ -381,14 +389,6 @@ function TasteSummary({ dimension, answers }: { dimension: Dimension; answers: A
   );
 }
 
-function formatSignal(id: string, index: number): string {
-  const label = id.replace(/^(web|interior)-/, "").replace(/-/g, " ");
-  return `${String(index + 1).padStart(2, "0")} · ${label}`;
-}
-
-function sentenceCase(value: string): string {
-  return value.charAt(0).toUpperCase() + value.slice(1);
-}
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;

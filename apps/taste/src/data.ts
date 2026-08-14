@@ -6,7 +6,7 @@
  * — a pair that turns out not to discriminate is a copy change, not a UI change.
  */
 
-export type DimensionId = "writing" | "music" | "web-design" | "interior-design";
+export type DimensionId = "writing" | "music" | "visual" | "building";
 
 /** One this-or-that call. */
 export interface AxisMeta {
@@ -36,9 +36,14 @@ export interface Option {
 export interface Dimension {
   id: DimensionId;
   label: string;
-  /** The concept page this dimension's memory is filed to. */
-  page: string;
-  /** One line under the title on the home card. */
+  /**
+   * One line under the title on the home card.
+   *
+   * The destination memory page is deliberately NOT part of this data: it is
+   * derived from the dimension id through the closed map in `prompt.ts`
+   * (`PAGE_BY_DIMENSION`), mirrored server-side in the route, so nothing
+   * user-editable or content-adjacent can steer where the profile is filed.
+   */
   blurb: string;
   pairs: Pair[];
   sources: SourceSpec;
@@ -61,7 +66,6 @@ export const DIMENSIONS: Dimension[] = [
   {
     id: "writing",
     label: "Writing",
-    page: "taste-writing",
     blurb: "How your drafts should sound before you touch them",
     sources: {
       kind: "text",
@@ -80,7 +84,6 @@ export const DIMENSIONS: Dimension[] = [
   {
     id: "music",
     label: "Music",
-    page: "taste-music",
     blurb: "What you reach for, and what you reach for it instead of",
     sources: { kind: "list", label: "Artists you'd put on without thinking", placeholder: "Add an artist and press Enter", hint: "Five or six is plenty. Ones you actually return to, not ones you admire." },
     pairs: [
@@ -91,39 +94,38 @@ export const DIMENSIONS: Dimension[] = [
     ],
   },
   {
-    id: "web-design",
-    label: "Web Design",
-    page: "taste-web-design",
-    blurb: "How digital spaces should guide attention and hold a point of view",
-    sources: { kind: "none", label: "Web references", hint: "Attach a few sites or screenshots in the chat after this. The questions establish your baseline; references make it specific." },
+    id: "visual",
+    label: "Visual",
+    blurb: "How much the work is allowed to shout",
+    sources: {
+      kind: "none",
+      label: "Images",
+      hint: "Attach a few images in the chat after this — screenshots, covers, pages you like. The questionnaire gets a starting read; images make it specific.",
+    },
     pairs: [
-      { id: "web-density", axis: { id: "web-density", label: "Information density", leftLabel: "Spacious", rightLabel: "Layered" }, question: "When you land on a homepage, what feels right?", a: { body: "One clear proposition, generous margins, and a next step that is impossible to miss.", means: "edited, spacious pages with one dominant idea" }, b: { body: "Several threads visible at once: navigation, stories, tools, and details worth wandering into.", means: "layered, information-rich pages that reward exploration" } },
-      { id: "web-hierarchy", axis: { id: "web-hierarchy", label: "Hierarchy", leftLabel: "Explicit", rightLabel: "Discovered" }, question: "How should a page reveal itself?", a: { body: "The hierarchy is obvious in a glance: headline, proof, action. Everything else waits its turn.", means: "strong, explicit visual hierarchy with a clear reading path" }, b: { body: "The page unfolds gradually; scale, rhythm, and proximity let you discover what matters.", means: "quieter hierarchy that reveals importance through pacing and context" } },
-      { id: "web-type", axis: { id: "web-type", label: "Typography", leftLabel: "Neutral", rightLabel: "Expressive" }, question: "What role should typography play?", a: { body: "A neutral grotesk, carefully set. It should make the system feel calm and inevitable.", means: "restrained, neutral typography used for clarity and composure" }, b: { body: "A distinctive face with character. The type should announce that this is not another template.", means: "expressive typography used as a visible part of the brand" } },
-      { id: "web-navigation", axis: { id: "web-navigation", label: "Navigation", leftLabel: "Persistent", rightLabel: "Hidden until needed" }, question: "How should navigation behave?", a: { body: "Stable and legible. I always know where I am and what the important routes are.", means: "persistent, predictable navigation that prioritizes orientation" }, b: { body: "Lightly hidden until needed. The content gets the stage; the interface appears when invited.", means: "minimal, unobtrusive navigation that keeps the canvas quiet" } },
-      { id: "web-colour", axis: { id: "web-colour", label: "Colour", leftLabel: "Quiet", rightLabel: "Assertive" }, question: "Pick the site's colour attitude.", a: { body: "Near-neutrals with one precise accent, used like a mark in the margin.", means: "quiet neutral palettes with a controlled accent colour" }, b: { body: "A confident field of colour, with contrast and shifts that make the interface feel alive.", means: "assertive, colour-led systems with energetic contrast" } },
-      { id: "web-motion", axis: { id: "web-motion", label: "Motion", leftLabel: "Purposeful", rightLabel: "Atmospheric" }, question: "What should motion do?", a: { body: "Clarify a change: a panel settles, a state updates, a route has continuity.", means: "subtle, purposeful motion that explains interface state" }, b: { body: "Create atmosphere: scroll, hover, and transition become part of the composition.", means: "expressive motion that contributes mood and personality" } },
-      { id: "web-imagery", axis: { id: "web-imagery", label: "Imagery", leftLabel: "Selective", rightLabel: "Abundant" }, question: "When imagery is present, what should it feel like?", a: { body: "Specific and editorial — one image with a reason to be there, framed with care.", means: "selective, art-directed imagery with editorial restraint" }, b: { body: "Abundant and immediate — a visual field that makes the product or world feel tangible.", means: "image-forward experiences with visual abundance and immediacy" } },
-      { id: "web-surface", axis: { id: "web-surface", label: "Surface", leftLabel: "Flat", rightLabel: "Tactile" }, question: "How much interface should look like an object?", a: { body: "Mostly flat: type, spacing, and rules do the work; surfaces recede.", means: "flat, architectural interfaces with restrained surface treatment" }, b: { body: "Tactile layers: cards, panels, shadows, and texture make the system feel inhabitable.", means: "tactile interfaces with visible layers and material surfaces" } },
-      { id: "web-finish", axis: { id: "web-finish", label: "Finish", leftLabel: "Polished", rightLabel: "Imperfect" }, question: "What makes a launch feel finished?", a: { body: "Every edge is quiet: spacing is exact, states are covered, and nothing asks for attention by accident.", means: "near-invisible polish, consistency, and disciplined restraint" }, b: { body: "There is a little friction and surprise — a rough edge that proves a person made it.", means: "intentional imperfection and unexpected details that show authorship" } },
+      { id: "density", axis: { id: "density", label: "Density", leftLabel: "Spare", rightLabel: "Packed" }, question: "How full should a page be?", a: { body: "One idea, a lot of air around it.", means: "spare layouts with generous whitespace" }, b: { body: "Packed, layered, rewarding a second look.", means: "dense, maximal layouts with a lot to read" } },
+      { id: "contrast", axis: { id: "contrast", label: "Contrast", leftLabel: "Hard", rightLabel: "Muted" }, question: "Pick a register.", a: { body: "Hard contrast. Black, white, one colour that means something.", means: "high-contrast palettes with a single deliberate accent" }, b: { body: "Low contrast. Close tones, nothing shouting.", means: "muted, close-toned palettes" } },
+      { id: "form", axis: { id: "form", label: "Form", leftLabel: "Ruled", rightLabel: "Drawn" }, question: "What are the shapes like?", a: { body: "Ruled. Grids, right angles, things that line up.", means: "geometric, grid-led composition" }, b: { body: "Drawn. Hand-made edges, things slightly off.", means: "organic, hand-made forms" } },
+      { id: "lead", axis: { id: "lead", label: "Lead element", leftLabel: "Type", rightLabel: "Image" }, question: "What carries it?", a: { body: "The type. Set well enough that it doesn't need a picture.", means: "typography-led design" }, b: { body: "The image. Type stays out of the way.", means: "image-led design with restrained type" } },
     ],
   },
   {
-    id: "interior-design",
-    label: "Interior Design",
-    page: "taste-interior-design",
-    blurb: "The rooms, materials, and degree of calm you want to live inside",
-    sources: { kind: "none", label: "Interior references", hint: "Attach rooms, objects, or spaces you respond to in the chat after this. A few specific references will sharpen the profile." },
+    id: "building",
+    label: "Building",
+    blurb: "How you like systems to be shaped, run, and handed to you",
+    sources: {
+      kind: "text",
+      label: "Things you've built or design you admire",
+      placeholder:
+        "Paste a short README or design note, or drop in URLs of tools whose design you admire — one per line.",
+      hint: "One or two beats a portfolio. What matters is the design decisions in them, not the polish.",
+    },
     pairs: [
-      { id: "interior-plan", axis: { id: "interior-plan", label: "Plan", leftLabel: "Open", rightLabel: "Zoned" }, question: "How should a room organize your attention?", a: { body: "Open and legible. You can read the whole room and move through it without obstacles.", means: "open plans with clear sightlines and unforced circulation" }, b: { body: "Composed in zones. Each corner has its own temperature and gives you somewhere to settle.", means: "layered rooms with distinct, intimate zones" } },
-      { id: "interior-light", axis: { id: "interior-light", label: "Light", leftLabel: "Crisp", rightLabel: "Atmospheric" }, question: "What kind of light makes a room feel like yours?", a: { body: "Cool daylight, crisp edges, and an honest sense of the room's structure.", means: "bright, directional light that emphasizes clarity and architecture" }, b: { body: "Low pools of warm light, with shadows doing as much as the fixtures.", means: "warm, atmospheric lighting with depth and softness" } },
-      { id: "interior-palette", axis: { id: "interior-palette", label: "Palette", leftLabel: "Neutral", rightLabel: "Colourful" }, question: "Choose a base palette.", a: { body: "Chalk, stone, timber, blackened metal — quiet materials close to their natural tones.", means: "neutral, mineral palettes with restrained tonal variation" }, b: { body: "A saturated wall, a coloured sofa, or a rug that changes the weather of the room.", means: "confident colour used to give rooms a strong emotional register" } },
-      { id: "interior-material", axis: { id: "interior-material", label: "Material", leftLabel: "Precise", rightLabel: "Tactile" }, question: "Which material language feels more alive?", a: { body: "Smooth plaster, honed stone, brushed steel: surfaces with a precise, quiet finish.", means: "refined, smooth materials with controlled precision" }, b: { body: "Wool, raw wood, glazed ceramic, linen: surfaces that show touch and variation.", means: "tactile, natural materials with visible irregularity" } },
-      { id: "interior-furniture", axis: { id: "interior-furniture", label: "Furniture", leftLabel: "Quiet", rightLabel: "Sculptural" }, question: "What should the big pieces do?", a: { body: "Hold their line. Low, simple silhouettes that leave the architecture in charge.", means: "quiet, low-slung furniture with disciplined silhouettes" }, b: { body: "Make a gesture. A generous chair, a sculptural table, something with a clear point of view.", means: "sculptural statement furniture that anchors the room" } },
-      { id: "interior-object", axis: { id: "interior-object", label: "Objects", leftLabel: "Edited", rightLabel: "Collected" }, question: "How should objects enter the room?", a: { body: "Few and deliberate: one vessel, one artwork, one thing with enough space around it.", means: "sparse, edited objects with generous breathing room" }, b: { body: "Collected over time: books, ceramics, pictures, and useful things forming a personal layer.", means: "accumulated collections that make a room feel inhabited" } },
-      { id: "interior-age", axis: { id: "interior-age", label: "Time", leftLabel: "Contemporary", rightLabel: "Eclectic" }, question: "Where should the room sit in time?", a: { body: "Current but not trendy. New work, clean details, and a sense of the present.", means: "contemporary rooms with crisp, forward-looking details" }, b: { body: "A conversation across decades: old timber, inherited forms, and modern pieces together.", means: "eclectic rooms that mix eras and visible history" } },
-      { id: "interior-comfort", axis: { id: "interior-comfort", label: "Comfort", leftLabel: "Orderly", rightLabel: "Soft" }, question: "What kind of comfort matters most?", a: { body: "The comfort of order — nothing fights the eye, and the room resets easily.", means: "calm, orderly comfort with low visual noise" }, b: { body: "The comfort of softness — deep upholstery, blankets, books, and permission to stay awhile.", means: "sensory, enveloping comfort with visible signs of use" } },
-      { id: "interior-contrast", axis: { id: "interior-contrast", label: "Contrast", leftLabel: "Measured", rightLabel: "High tension" }, question: "How much tension should a room have?", a: { body: "Close tones and measured contrasts. The room should reveal itself slowly.", means: "low-contrast rooms with a quiet, gradual atmosphere" }, b: { body: "A dark wall against pale stone, a hard edge beside something soft — enough tension to keep it awake.", means: "deliberate contrast between light, dark, hard, and soft elements" } },
+      { id: "control", axis: { id: "control", label: "Control", leftLabel: "Raw control", rightLabel: "Framework leverage" }, question: "A new service needs a job queue.", a: { body: "A Postgres table, a worker loop we wrote, and a dashboard query we understand end to end.", means: "raw control — owning the glue code and understanding every layer, over adopting a framework's abstraction" }, b: { body: "A managed queue with retries, dead-lettering, and metrics out of the box.", means: "framework leverage — accepting an abstraction's opinions in exchange for not maintaining plumbing" } },
+      { id: "automation", axis: { id: "automation", label: "Automation", leftLabel: "Staged", rightLabel: "Ambient" }, question: "How should a system act on your behalf?", a: { body: "Propose, then wait. Show me the diff and give me an apply step.", means: "explicit staged boundaries — propose-then-apply with a visible diff, over ambient automation" }, b: { body: "Just do it and tell me after. Interruptions cost more than surprises.", means: "ambient automation that acts and reports, accepting the occasional surprise" } },
+      { id: "defaults", axis: { id: "defaults", label: "Configurability", leftLabel: "Opinionated", rightLabel: "Configurable" }, question: "Shipping a tool other people will use:", a: { body: "One good default path and few knobs. Opinionated beats flexible.", means: "opinionated defaults with a small configuration surface" }, b: { body: "Expose the config. People should be able to rewire it without forking.", means: "exposed configurability, even at the cost of a larger surface to learn" } },
+      { id: "iteration", axis: { id: "iteration", label: "Delivery", leftLabel: "Reversible slice", rightLabel: "Complete v1" }, question: "Version one of anything:", a: { body: "The smallest reversible slice today, and learn from it running.", means: "fast reversible iteration over upfront completeness" }, b: { body: "Take the extra week — migrations, edge cases, docs — so v1 doesn't need a v1.1.", means: "heavier upfront completeness, so the first release stands on its own" } },
+      { id: "evidence", axis: { id: "evidence", label: "Observability", leftLabel: "Visible evidence", rightLabel: "Quiet surface" }, question: "When it runs, what do you want to see?", a: { body: "Logs, counters, a status page. Show the evidence even when it's noisy.", means: "visible evidence and observability, tolerating a noisier surface" }, b: { body: "A clean surface that just works. Detail only when I go digging.", means: "a clean, quiet surface that hides its workings until asked" } },
     ],
   },
 ];

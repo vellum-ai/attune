@@ -1,186 +1,214 @@
 /**
- * The host bridge, wrapped. Every call no-ops when the app is opened outside
- * Vellum (a plain browser tab during development) and nothing throws.
+ * The host bridge, wrapped.
+ *
+ * Every call no-ops or reports unavailability when the app is opened outside
+ * Vellum (a plain browser tab during development); nothing throws at import
+ * time. Outside the host the app stays explorable, but nothing can be
+ * submitted and nothing reports success — the bridge being missing is a
+ * visible state, never a silent pass.
+ *
+ * Note on persistence of app-local state: inside Vellum the sandboxed iframe
+ * gets an in-memory `localStorage` shim, so anything "stored" there lasts
+ * only for the mount. Durable completion state lives server-side in the
+ * plugin journal and is read back over the route; local storage is only a
+ * courtesy cache for the plain-browser preview.
  */
 
-export type Confidence = "low" | "growing" | "established";
-
-export interface ProfileAxis {
-  id: string;
-  label: string;
-  leftLabel: string;
-  rightLabel: string;
-  leftWeight?: number;
-  rightWeight?: number;
-  learnedPosition?: number | null;
-  overridePosition?: number | null;
-  overrideUpdatedAt?: string | null;
-  confidence?: Confidence;
-  evidenceCount?: number;
-  updatedAt?: string;
-  lastReason?: string;
-}
-
-export interface ProfileDimension {
-  id: string;
-  label?: string;
-  baselineComplete: boolean;
-  axes: ProfileAxis[];
-}
-
-export interface TasteProfile {
-  schemaVersion: number;
-  revision: number;
-  dimensions: ProfileDimension[];
-}
+import type { TasteSubmission } from "./payload";
 
 interface VellumResponseLike {
-  ok?: boolean;
-  status?: number;
-  json?: () => Promise<unknown>;
-}
-
-interface SubscribeOptions {
-  tags: string[];
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
 }
 
 interface VellumBridge {
   sendAction?(actionId: string, data: Record<string, unknown>): void;
-  fetch?(path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }): Promise<unknown>;
-  subscribe?(options: SubscribeOptions, callback: (payload: unknown) => void): (() => void) | void;
+  fetch?(
+    path: string,
+    init?: { method?: string; headers?: Record<string, string>; body?: string },
+  ): Promise<VellumResponseLike>;
+  subscribe?(
+    options: { tags: string[] },
+    callback: (payload: unknown) => void,
+  ): (() => void) | void;
 }
 
 const bridge = (): VellumBridge | undefined =>
-  typeof window === "undefined" ? undefined : (window.vellum as unknown as VellumBridge | undefined);
+  typeof window === "undefined"
+    ? undefined
+    : ((window as unknown as { vellum?: VellumBridge }).vellum);
 
+/** Whether the Vellum host bridge is reachable at all. */
 export function hostAvailable(): boolean {
   return typeof bridge()?.sendAction === "function";
 }
 
+/** Whether the typed route path (bridge fetch) is available. */
+export function routeAvailable(): boolean {
+  return typeof bridge()?.fetch === "function";
+}
+
+/** Send a message into the conversation as though the user typed it. */
 export function relayPrompt(prompt: string): void {
   bridge()?.sendAction?.("relay_prompt", { prompt });
 }
 
+/** Put the app and the chat side by side. */
 export function showSplit(): void {
   bridge()?.sendAction?.("set_view", { view: "split" });
 }
 
-const KEY = "vellum.taste.completed.v1";
+// ── Typed route access ─────────────────────────────────────────────────────
+//
+// Plugin routes are served under `/v1/x/plugins/<install-dir>/…`, and the
+// install directory name is not exposed to the sandboxed app, so the client
+// probes the known install names once and caches the winner. The predecessor
+// install ("taste") is disabled in production and its routes 404, so the
+// probe settles on "attune" there; the fallback keeps dev installs working.
 
-export function readCompleted(): Record<string, number> {
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Record<string, number>) : {};
-  } catch {
-    return {};
-  }
-}
+const CANDIDATE_PLUGIN_DIRS = ["attune", "taste"] as const;
 
-export function markCompleted(dimensionId: string, answered: number): void {
-  try {
-    const completed = readCompleted();
-    const next = { ...completed, [dimensionId]: Math.max(completed[dimensionId] ?? 0, answered) };
-    window.localStorage.setItem(KEY, JSON.stringify(next));
-  } catch {
-    // Local progress is helpful, but never worth failing the hand-off.
-  }
-}
+let resolvedBase: string | null = null;
 
-function normalizePayload(payload: unknown): unknown {
-  if (payload && typeof payload === "object" && "data" in payload) {
-    return (payload as { data?: unknown }).data ?? payload;
-  }
-  return payload;
-}
-
-async function responsePayload(response: unknown): Promise<unknown> {
-  if (response && typeof response === "object" && typeof (response as VellumResponseLike).json === "function") {
-    return (response as VellumResponseLike).json!();
-  }
-  return response;
-}
-
-function normalizeDimensions(value: unknown): ProfileDimension[] {
-  if (Array.isArray(value)) return value as ProfileDimension[];
-  if (value && typeof value === "object") {
-    return Object.entries(value as Record<string, Omit<ProfileDimension, "id"> & { id?: string }>).map(([id, dimension]) => ({
-      ...dimension,
-      id: dimension.id ?? id,
-    }));
-  }
-  return [];
-}
-
-function normalizeProfile(payload: unknown): TasteProfile | null {
-  const value = normalizePayload(payload) as Partial<TasteProfile> | null | undefined;
-  if (!value || typeof value !== "object") return null;
-  return {
-    schemaVersion: Number(value.schemaVersion ?? 1),
-    revision: Number(value.revision ?? 0),
-    dimensions: normalizeDimensions(value.dimensions),
-  };
-}
-
-export async function fetchTasteProfile(): Promise<TasteProfile | null> {
+async function routeBase(): Promise<string | null> {
   const hostFetch = bridge()?.fetch;
-  // Plugin apps do not reach around the host bridge. Outside Vellum, the empty
-  // profile is the useful dev fallback and keeps the app renderable.
   if (!hostFetch) return null;
-
-  try {
-    const response = await hostFetch("/x/plugins/taste/profile");
-    if (response && typeof response === "object" && "ok" in response && !(response as VellumResponseLike).ok) {
-      if ((response as VellumResponseLike).status === 404) return null;
-      throw new Error(`Profile request failed (${(response as VellumResponseLike).status ?? "unknown"})`);
+  if (resolvedBase) return resolvedBase;
+  for (const dir of CANDIDATE_PLUGIN_DIRS) {
+    const base = `/v1/x/plugins/${dir}/taste`;
+    try {
+      const response = await hostFetch(base);
+      if (response.ok) {
+        resolvedBase = base;
+        return base;
+      }
+    } catch {
+      // Try the next candidate.
     }
-    return normalizeProfile(await responsePayload(response));
-  } catch (error) {
-    throw error instanceof Error ? error : new Error("Could not load taste profile");
+  }
+  return null;
+}
+
+/** The typed acknowledgment the route returns. */
+export interface TasteAck {
+  requestId: string;
+  stage: "accepted" | "persisted" | "failed";
+  dimension: string;
+  page: string;
+  statements: string[];
+  conversationId?: string;
+  error?: string;
+  verifiedAt?: string;
+}
+
+export type SubmitOutcome =
+  | { kind: "ack"; ack: TasteAck }
+  | { kind: "rejected"; status: number; errors: string[] }
+  | { kind: "unavailable" }
+  | { kind: "transport-error"; message: string };
+
+function isAck(value: unknown): value is TasteAck {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.requestId === "string" &&
+    (record.stage === "accepted" || record.stage === "persisted" || record.stage === "failed") &&
+    typeof record.page === "string" &&
+    Array.isArray(record.statements)
+  );
+}
+
+async function parseErrors(response: VellumResponseLike): Promise<string[]> {
+  try {
+    const body = (await response.json()) as { error?: unknown; details?: unknown };
+    const errors: string[] = [];
+    if (typeof body.error === "string") errors.push(body.error);
+    if (Array.isArray(body.details)) {
+      errors.push(...body.details.filter((d): d is string => typeof d === "string"));
+    }
+    return errors.length > 0 ? errors : [`request failed (${response.status})`];
+  } catch {
+    return [`request failed (${response.status})`];
   }
 }
 
-export function subscribeTasteProfile(onProfile: (profile: TasteProfile | null) => void): () => void {
-  const subscription = bridge()?.subscribe;
-  if (!subscription) return () => undefined;
-
-  const unsubscribe = subscription({ tags: ["taste:profile"] }, () => {
-    // The event is an invalidation tag, not the profile payload. Re-read the
-    // canonical state so revisions and object-shaped dimensions stay correct.
-    void fetchTasteProfile().then(onProfile).catch(() => undefined);
-  });
-  return typeof unsubscribe === "function" ? unsubscribe : () => undefined;
-}
-
-export interface ProfileActionResult {
-  ok: boolean;
-  fallback?: boolean;
-  error?: string;
-}
-
-export async function postTasteProfileAction(body: Record<string, unknown>): Promise<ProfileActionResult> {
+/** POST the submission and return the machine acknowledgment. */
+export async function submitTaste(submission: TasteSubmission): Promise<SubmitOutcome> {
   const hostFetch = bridge()?.fetch;
-  if (!hostFetch) return { ok: true, fallback: true };
+  const base = await routeBase();
+  if (!hostFetch || !base) return { kind: "unavailable" };
 
   try {
-    const response = await hostFetch("/x/plugins/taste/profile", {
+    const response = await hostFetch(base, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(submission),
     });
-    if (response && typeof response === "object" && "ok" in response && !(response as VellumResponseLike).ok) {
-      const status = (response as VellumResponseLike).status ?? "unknown";
-      return { ok: false, error: `Profile update failed (${status})` };
+    if (response.status === 400 || response.status === 409) {
+      return { kind: "rejected", status: response.status, errors: await parseErrors(response) };
     }
-    return { ok: true };
+    const payload = await response.json().catch(() => null);
+    if (isAck(payload)) return { kind: "ack", ack: payload };
+    return {
+      kind: "transport-error",
+      message: `malformed acknowledgment (status ${response.status})`,
+    };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Profile update failed" };
+    return {
+      kind: "transport-error",
+      message: error instanceof Error ? error.message : "request failed",
+    };
   }
 }
 
-export function setBaseline(dimensionId: string, answers: Array<{ axisId: string; label: string; leftLabel: string; rightLabel: string; side: "left" | "right" }>): Promise<ProfileActionResult> {
-  return postTasteProfileAction({ action: "set_baseline", dimensionId, answers });
+/** Poll one request's journal status (used after a client-side timeout). */
+export async function fetchTasteStatus(requestId: string): Promise<SubmitOutcome> {
+  const hostFetch = bridge()?.fetch;
+  const base = await routeBase();
+  if (!hostFetch || !base) return { kind: "unavailable" };
+  try {
+    const response = await hostFetch(`${base}?requestId=${encodeURIComponent(requestId)}`);
+    if (!response.ok) {
+      return { kind: "rejected", status: response.status, errors: await parseErrors(response) };
+    }
+    const payload = await response.json().catch(() => null);
+    if (isAck(payload)) return { kind: "ack", ack: payload };
+    return { kind: "transport-error", message: "malformed status response" };
+  } catch (error) {
+    return {
+      kind: "transport-error",
+      message: error instanceof Error ? error.message : "request failed",
+    };
+  }
 }
 
-export function setOverride(dimensionId: string, axisId: string, position: number | null): Promise<ProfileActionResult> {
-  return postTasteProfileAction({ action: "set_override", dimensionId, axisId, position });
+/** Server-side completion metadata per dimension (the durable record). */
+export async function fetchCompletion(): Promise<Record<
+  string,
+  { persistedAt: string; statements: number }
+> | null> {
+  const hostFetch = bridge()?.fetch;
+  const base = await routeBase();
+  if (!hostFetch || !base) return null;
+  try {
+    const response = await hostFetch(base);
+    if (!response.ok) return null;
+    const payload = (await response.json()) as { completion?: unknown };
+    if (typeof payload === "object" && payload !== null && typeof payload.completion === "object" && payload.completion !== null) {
+      return payload.completion as Record<string, { persistedAt: string; statements: number }>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Re-fetch on the plugin's own sync tag. Returns an unsubscribe. */
+export function subscribeTasteChanges(onChange: () => void): () => void {
+  const subscription = bridge()?.subscribe;
+  if (!subscription) return () => undefined;
+  const unsubscribe = subscription({ tags: ["attune:taste"] }, () => onChange());
+  return typeof unsubscribe === "function" ? unsubscribe : () => undefined;
 }

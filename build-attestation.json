@@ -1,0 +1,23 @@
+{
+  "esbuild": "0.24.2",
+  "inputs": {
+    "components/App.tsx": "b541702d3f88bdfe3b36d61a2af023c4d0e25025053239167e2abc5b516e199e",
+    "components/Flow.tsx": "1d7089f1db05a4ce7d6f799a70c6e5c1e5e0da5d677db7a6df2489e32171771b",
+    "data.ts": "5ae168333f45668020695fffe4ee1074cff9d90e9cbb98009cda502eaa5f2ae6",
+    "index.html": "479fff23d485d724df5fd9572889444a2232bd1e9a30835f9213e4e0fb6d49f9",
+    "limits.ts": "61422419b9b939a3d493b3412da327f5fc937db7e096ffd2ceb41d7dedad3b45",
+    "main.tsx": "f88ad032ef96fab7d86d8b18c352bc963279543468ad1b0f7270126410c34d2f",
+    "payload.ts": "5c9ab7545241ab36375d0c3a2223900f29dc36c54ecf12f4c2e6cb41a9b2a0f1",
+    "prompt.ts": "ab1635b8651e8936c7134948239bcd2a28d9ff00f303aed1241fb6f951b3a09c",
+    "storage.ts": "f70417d06b310a99f9fd35af7cdbc46e0c3ee0aaea70bbe4b9f19d42e6e2f49c",
+    "styles.css": "2c4756be2d12736ac3dd41ae4d770309aa1438783c2fc16bac49f125893e7dc9",
+    "submission.ts": "be094f6399572a9b8891e32199759c0ca337c434d1214fa3ae573b488d5fc4b3",
+    "url.ts": "1964a85b113a62acffe8408b3436f426d68cd9b158f30dfd2be9b17bdb462257",
+    "vellum.ts": "8e3e4d817c9d8b8e2ff52dd0a0f96266e52e399f598faca7009b800fbd3a8956"
+  },
+  "outputs": {
+    "index.html": "12d3900a63587cb60fe06311b6000face07cc0f6d16f200538c6a28551190e29",
+    "main.css": "a656f871a3c5a53bf137bf32176dbb9a3da31889439e7bd2c7c11c0941bbc28e",
+    "main.js": "ca8b202a348d7e57ee39a1ea524a4f9ad1b1fad4c69916e199b05b99cd98680c"
+  }
+}

@@ -16,7 +16,7 @@ const postToolUse: HookFunction<PostToolUseContext> = async (ctx) => {
   await publishEvent({
     id: crypto.randomUUID(),
     emittedAt: new Date().toISOString(),
-    message: { type: "sync_changed", tags: [TAG] } as never,
+    message: { type: "sync_changed", tags: [TAG] },
   }).catch(() => undefined);
 };
 

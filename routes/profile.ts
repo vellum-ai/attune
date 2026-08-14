@@ -12,7 +12,7 @@ async function publishProfileChanged(): Promise<void> {
   await publishEvent({
     id: crypto.randomUUID(),
     emittedAt: new Date().toISOString(),
-    message: { type: "sync_changed", tags: [PROFILE_SYNC_TAG] } as never,
+    message: { type: "sync_changed", tags: [PROFILE_SYNC_TAG] },
   });
 }
 

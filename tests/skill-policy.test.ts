@@ -1,7 +1,10 @@
 /**
- * The skill is prose, but its policy commitments are load-bearing — these
- * tests pin the statements the security model depends on, so a future copy
- * edit that weakens one fails loudly instead of silently.
+ * Policy pins for the skill prose. These are deliberately NOT behavior
+ * proofs — runtime activation is decided by the host's skill selection (and
+ * the current assistant environment independently mandates Taste in
+ * SOUL.md, so observed activation cannot be attributed to this metadata
+ * alone). What these tests do is keep the load-bearing policy statements
+ * from being silently weakened by a copy edit.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -14,7 +17,7 @@ const SKILL = readFileSync(
 );
 
 describe("read path", () => {
-  test("covers all four final dimensions", () => {
+  test("covers all four dimensions and their pages", () => {
     for (const page of [
       "taste-writing",
       "taste-music",
@@ -25,9 +28,16 @@ describe("read path", () => {
     }
   });
 
-  test("activates for the final creative dimensions", () => {
-    expect(SKILL).toMatch(/Writing.*Music.*Web Design.*Interior Design/s);
-    expect(SKILL).toMatch(/web design|interior design/i);
+  test("reads the calibrated profile and the memory pages, both before drafting", () => {
+    expect(SKILL).toContain("read_profile");
+    expect(SKILL).toMatch(/Two reads, both before drafting/);
+    expect(SKILL).toMatch(/smallest relevant\s+set/);
+  });
+
+  test("manual overrides win over learned positions and confidence gates the lean", () => {
+    expect(SKILL).toContain("wins over the learned position");
+    expect(SKILL).toContain("`established` is a firm default");
+    expect(SKILL).toContain("no recorded preference carries no instruction");
   });
 
   test("excludes mechanical tasks", () => {
@@ -35,7 +45,7 @@ describe("read path", () => {
     expect(SKILL).toMatch(/purely mechanical/);
   });
 
-  test("states the full precedence order", () => {
+  test("states the full five-level precedence order", () => {
     const order = [
       "Platform and identity invariants",
       "explicit current-turn instructions",
@@ -58,24 +68,39 @@ describe("read path", () => {
   });
 
   test("taste is applied silently", () => {
-    expect(SKILL).toContain("apply it silently");
+    expect(SKILL).toMatch(/apply it silently, without narrating/);
   });
 });
 
 describe("learning path", () => {
+  test("distinguishes the verified onboarding write path from conversational remember", () => {
+    expect(SKILL).toContain("Do not substitute `remember` there");
+    expect(SKILL).toMatch(/consolidation, not instantly/);
+  });
+
+  test("durable conversational reactions write both records", () => {
+    expect(SKILL).toContain("update_profile");
+    expect(SKILL).toMatch(/two\s+writes/);
+    expect(SKILL).toMatch(/Never invent\s+numeric precision/);
+  });
+
   test("one-off constraints are non-durable and not recorded", () => {
-    expect(SKILL).toContain("One-off project constraints");
-    expect(SKILL).toMatch(/one-off constraint|one-off constraints/i);
+    expect(SKILL).toMatch(/One-off\s+project constraints are non-durable/);
   });
 
   test("contentless praise is not evidence", () => {
     expect(SKILL).toContain("Silence, acceptance, or contentless praise");
-    expect(SKILL).toContain("Contentless praise teaches nothing");
+    expect(SKILL).toMatch(/contentless\s+praise teaches nothing/);
   });
 
   test("identity rules cannot be overwritten by taste", () => {
     expect(SKILL).toContain("never be rewritten as mutable");
-    expect(SKILL).toContain("remain authoritative");
+    expect(SKILL).toMatch(/remain\s+authoritative/);
+  });
+
+  test("provenance distinguishes claimed authorship from unknown origin", () => {
+    expect(SKILL).toMatch(/claims as their own/);
+    expect(SKILL).toContain("supplying text is not authorship");
   });
 
   test("stores preferences, never raw source or secrets", () => {

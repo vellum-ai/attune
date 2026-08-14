@@ -91,8 +91,64 @@ export async function buildApp(appDir: string, distDir: string): Promise<void> {
   }
 }
 
+// ── Build attestation ──────────────────────────────────────────────────────
+//
+// The host regenerates `apps/<app>/dist` itself and deliberately excludes it
+// from install fingerprinting, so the artifact is not directly covered by
+// the install hash. What the repo CAN pin is a source-plus-recipe
+// attestation: hashes of every build input, the pinned esbuild version, and
+// the hashes of the outputs a clean build produces. The attestation file is
+// tracked source (covered by the install fingerprint), and the test suite
+// rebuilds and compares — so a dist that drifts from reviewed source is
+// detectable, even though only a host change could make the *installer*
+// verify it (see README, platform limitations).
+
+export interface BuildAttestation {
+  esbuild: string;
+  inputs: Record<string, string>;
+  outputs: Record<string, string>;
+}
+
+export async function computeAttestation(appDir: string, distDir: string): Promise<BuildAttestation> {
+  const { createHash } = await import("node:crypto");
+  const { readdirSync, readFileSync, statSync } = await import("node:fs");
+  const { relative } = await import("node:path");
+
+  const hashTree = (root: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(dir).sort()) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else {
+          out[relative(root, full)] = createHash("sha256")
+            .update(readFileSync(full))
+            .digest("hex");
+        }
+      }
+    };
+    walk(root);
+    return out;
+  };
+
+  const esbuildVersion = JSON.parse(
+    await readFile(join(REPO_ROOT, "node_modules", "esbuild", "package.json"), "utf-8"),
+  ).version as string;
+
+  return {
+    esbuild: esbuildVersion,
+    inputs: hashTree(join(appDir, "src")),
+    outputs: hashTree(distDir),
+  };
+}
+
+export const ATTESTATION_PATH = join(REPO_ROOT, "build-attestation.json");
+
 if (import.meta.main) {
   const appDir = join(REPO_ROOT, "apps", "taste");
-  await buildApp(appDir, join(appDir, "dist"));
-  console.log("Built apps/taste/src → apps/taste/dist");
+  const distDir = join(appDir, "dist");
+  await buildApp(appDir, distDir);
+  const attestation = await computeAttestation(appDir, distDir);
+  await writeFile(ATTESTATION_PATH, `${JSON.stringify(attestation, null, 2)}\n`);
+  console.log("Built apps/taste/src → apps/taste/dist and wrote build-attestation.json");
 }

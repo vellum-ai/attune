@@ -88,13 +88,79 @@ describe("runtime source static safety", () => {
     }
   });
 
-  test("the host fetch bridge is scoped to the Taste profile route", () => {
+  test("the host fetch bridge is scoped to the plugin's own taste route", () => {
     const vellum = readFileSync(join(SRC_DIR, "vellum.ts"), "utf-8");
-    const routes = [...vellum.matchAll(/hostFetch\(\s*"([^"]+)"/g)].map(
-      (match) => match[1],
-    );
-    expect(routes.length).toBeGreaterThan(0);
-    expect(new Set(routes)).toEqual(new Set(["/x/plugins/taste/profile"]));
+    // Every bridge-fetch base path is built from the fixed candidate list;
+    // no other path literals reach hostFetch.
+    expect(vellum).toContain('CANDIDATE_PLUGIN_DIRS = ["attune", "taste"]');
+    expect(vellum).toContain("/v1/x/plugins/${dir}");
+    expect(vellum).toContain("${namespace}/taste");
+    expect(vellum).toContain("${namespace}/profile");
     expect(vellum).not.toMatch(/\bwindow\.fetch\s*\(/);
+    // No absolute-URL fetches anywhere in the app source.
+    for (const file of files) {
+      expect(readFileSync(file, "utf-8")).not.toMatch(/hostFetch\(\s*"https?:/);
+    }
+  });
+});
+
+describe("plugin-side source static safety (routes, hooks, skill tools, helpers)", () => {
+  const PLUGIN_DIRS = [
+    join(import.meta.dir, "..", "routes"),
+    join(import.meta.dir, "..", "src"),
+    join(import.meta.dir, "..", "hooks"),
+    join(import.meta.dir, "..", "skills", "taste", "tools"),
+  ];
+  const files = PLUGIN_DIRS.flatMap((dir) => runtimeSources(dir));
+
+  // Route/helper code runs host-side: node:fs and @vellumai/plugin-api are
+  // its sanctioned surface. Network, shell, and dynamic code stay forbidden.
+  const FORBIDDEN_HOST_SIDE: Array<{ label: string; pattern: RegExp }> = [
+    { label: "raw fetch call", pattern: /(?<!\.)\bfetch\s*\(/ },
+    { label: "XMLHttpRequest", pattern: /XMLHttpRequest/ },
+    { label: "WebSocket", pattern: /\bWebSocket\b/ },
+    { label: "child_process", pattern: /child_process/ },
+    { label: "Bun spawn", pattern: /Bun\.(spawn|\$)/ },
+    { label: "eval", pattern: /\beval\s*\(/ },
+    { label: "Function constructor", pattern: /new\s+Function\s*\(/ },
+    { label: "dynamic import", pattern: /\bimport\s*\(/ },
+  ];
+
+  test("scans the route and helper files", () => {
+    expect(files.length).toBeGreaterThanOrEqual(4);
+  });
+
+  for (const { label, pattern } of FORBIDDEN_HOST_SIDE) {
+    test(`route/helpers contain no ${label}`, () => {
+      for (const file of files) {
+        const content = readFileSync(file, "utf-8");
+        if (pattern.test(content)) {
+          throw new Error(`${label} found in ${file} (pattern ${pattern})`);
+        }
+      }
+    });
+  }
+
+  test("only the intended surfaces exist", () => {
+    const root = join(import.meta.dir, "..");
+    // No always-on model-visible tools and no schedules; skill tools are
+    // scoped to the taste skill via TOOLS.json.
+    for (const surface of ["tools", "schedules"]) {
+      let exists = true;
+      try {
+        readdirSync(join(root, surface));
+      } catch {
+        exists = false;
+      }
+      expect(exists).toBe(false);
+    }
+    expect(readdirSync(join(root, "hooks")).sort()).toEqual(["post-tool-use.ts"]);
+    expect(readdirSync(join(root, "routes")).sort()).toEqual(["profile.ts", "taste.ts"]);
+    expect(readdirSync(join(root, "skills"))).toEqual(["taste"]);
+    expect(readdirSync(join(root, "skills", "taste", "tools")).sort()).toEqual([
+      "read_profile.ts",
+      "update_profile.ts",
+    ]);
+    expect(readdirSync(join(root, "apps"))).toEqual(["taste"]);
   });
 });

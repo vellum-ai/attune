@@ -1,13 +1,28 @@
 /**
- * One dimension's onboarding: one choice at a time, optional references,
- * a compact local read, then a hand-off to the assistant.
+ * One dimension's onboarding: one choice at a time, optional references with
+ * explicit provenance, a compact local read, then the typed hand-off.
+ *
+ * The build step is acknowledgment-driven: nothing is marked complete and no
+ * success copy renders until the route returns a verified `persisted`
+ * acknowledgment. Outside Vellum the flow stays explorable end to end, but
+ * the build step reports that nothing can be saved — it never pretends.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 import type { Dimension, Option, Pair } from "../data";
-import { buildPrompt } from "../prompt";
-import { markCompleted, relayPrompt, showSplit, hostAvailable, setBaseline } from "../vellum";
+import type { OverflowError } from "../limits";
+import { buildSubmission, PAGE_BY_DIMENSION } from "../payload";
+import { runSubmission, type SubmissionPhase } from "../submission";
+import { markAnswered, markPersisted } from "../storage";
+import {
+  fetchTasteStatus,
+  hostAvailable,
+  routeAvailable,
+  setBaseline,
+  showSplit,
+  submitTaste,
+} from "../vellum";
 
 interface Props {
   dimension: Dimension;
@@ -16,7 +31,7 @@ interface Props {
 }
 
 type Answers = Record<string, Option>;
-type Stage = "questions" | "sources" | "review" | "sent";
+type Stage = "questions" | "sources" | "review";
 
 export function Flow({ dimension, onExit, onSaved }: Props) {
   const [answers, setAnswers] = useState<Answers>({});
@@ -25,12 +40,17 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
   const [sourceText, setSourceText] = useState("");
   const [items, setItems] = useState<string[]>([]);
   const [draftItem, setDraftItem] = useState("");
-  const [saveState, setSaveState] = useState<"idle" | "saving" | "error">("idle");
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [authorshipClaimed, setAuthorshipClaimed] = useState(false);
+  const [phase, setPhase] = useState<SubmissionPhase>({ phase: "idle" });
+  const [overflows, setOverflows] = useState<OverflowError[]>([]);
   const [transitioning, setTransitioning] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const transitionTimerRef = useRef<number | null>(null);
   const transitionLockRef = useRef(false);
+  // One request id per distinct payload: retries reuse it (the route is
+  // idempotent by id), edits invalidate it so a changed payload never
+  // collides with a spent id.
+  const requestIdRef = useRef<string | null>(null);
 
   const answered = Object.keys(answers).length;
   const total = dimension.pairs.length;
@@ -40,14 +60,22 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
   const stageTotal = total + (hasSourceStep ? 2 : 1);
   const stagePosition = isQuestionStage ? step + 1 : stage === "sources" ? total + 1 : stageTotal;
   const stageLabel = isQuestionStage ? `Question ${step + 1} of ${total}` : stage === "sources" ? "References" : "Summary";
+  const busy = phase.phase === "sending" || phase.phase === "accepted";
+  const persisted = phase.phase === "persisted";
 
   useLayoutEffect(() => {
     stageRef.current?.focus({ preventScroll: true });
-  }, [step, stage]);
+  }, [step, stage, persisted]);
 
   useEffect(() => () => {
     if (transitionTimerRef.current !== null) window.clearTimeout(transitionTimerRef.current);
   }, []);
+
+  const invalidateAttempt = () => {
+    requestIdRef.current = null;
+    setOverflows([]);
+    if (phase.phase !== "idle") setPhase({ phase: "idle" });
+  };
 
   const commitQuestionTransition = () => {
     transitionTimerRef.current = null;
@@ -64,12 +92,12 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
     if (transitionLockRef.current) return;
     transitionLockRef.current = true;
     setAnswers((prev) => ({ ...prev, [pairId]: option }));
+    invalidateAttempt();
 
     if (prefersReducedMotion()) {
       commitQuestionTransition();
       return;
     }
-
     setTransitioning(true);
     transitionTimerRef.current = window.setTimeout(commitQuestionTransition, 180);
   };
@@ -82,9 +110,11 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
     }
     setItems((prev) => [...prev, value]);
     setDraftItem("");
+    invalidateAttempt();
   };
 
   const previous = () => {
+    if (busy) return;
     if (transitionTimerRef.current !== null) {
       window.clearTimeout(transitionTimerRef.current);
       transitionTimerRef.current = null;
@@ -98,6 +128,7 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
       setStage("questions");
       setStep(total - 1);
     } else if (stage === "review") {
+      if (phase.phase === "failed" || phase.phase === "unavailable") invalidateAttempt();
       if (hasSourceStep) {
         setStage("sources");
       } else {
@@ -108,46 +139,75 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
   };
 
   const build = async () => {
-    if (saveState === "saving") return;
-    setSaveState("saving");
-    setSaveError(null);
-    const baseline = dimension.pairs.map((pair) => {
-      const selected = answers[pair.id];
-      return {
-        axisId: pair.axis.id,
-        label: pair.axis.label,
-        leftLabel: pair.axis.leftLabel,
-        rightLabel: pair.axis.rightLabel,
-        side: selected === pair.a ? "left" as const : "right" as const,
-      };
-    });
-    const result = await setBaseline(dimension.id, baseline);
-    if (!result.ok) {
-      setSaveState("error");
-      setSaveError(result.error ?? "Could not save the baseline. Try again.");
+    if (busy) return;
+    requestIdRef.current ??= crypto.randomUUID();
+
+    const built = buildSubmission(
+      requestIdRef.current,
+      dimension,
+      answers,
+      sourceText,
+      items,
+      authorshipClaimed,
+    );
+    if (!built.submission) {
+      setOverflows(built.overflows);
       return;
     }
-    onSaved?.();
-    relayPrompt(buildPrompt(dimension, answers, sourceText, items));
-    markCompleted(dimension.id, answered);
-    if (hostAvailable()) showSplit();
-    setSaveState("idle");
-    setStage("sent");
+    setOverflows([]);
+
+    // First persist the structured-profile baseline — only the pairs the
+    // user actually answered; an unanswered question is no evidence, not a
+    // default side. Repeating this on retry is safe: setting the same
+    // baseline twice converges to the same state.
+    if (routeAvailable()) {
+      const baseline = dimension.pairs
+        .filter((pair) => answers[pair.id] !== undefined)
+        .map((pair) => ({
+          axisId: pair.axis.id,
+          label: pair.axis.label,
+          leftLabel: pair.axis.leftLabel,
+          rightLabel: pair.axis.rightLabel,
+          side: answers[pair.id] === pair.a ? ("left" as const) : ("right" as const),
+        }));
+      const baselineResult = await setBaseline(dimension.id, baseline);
+      if (!baselineResult.ok && !baselineResult.unavailable) {
+        setPhase({
+          phase: "failed",
+          requestId: requestIdRef.current,
+          errors: [baselineResult.error ?? "Could not save the calibration baseline."],
+          canRetry: true,
+        });
+        return;
+      }
+    }
+
+    const final = await runSubmission(
+      built.submission,
+      { submit: submitTaste, fetchStatus: fetchTasteStatus },
+      setPhase,
+    );
+    if (final.phase === "persisted") {
+      markAnswered(dimension.id, answered);
+      markPersisted(dimension.id, final.ack.verifiedAt ?? new Date().toISOString());
+      onSaved?.();
+      if (hostAvailable()) showSplit();
+    }
   };
 
-  if (stage === "sent") {
+  if (persisted && phase.phase === "persisted") {
     return (
       <section class="flow" data-dimension={dimension.id}>
         <Header dimension={dimension} onExit={onExit} />
         <div class="stage-card done-card v-card" ref={stageRef} tabIndex={-1}>
           <span class="done-mark" aria-hidden="true">✓</span>
           <div class="done-copy">
-            <p class="section-label">Profile saved</p>
-            <h2>{hostAvailable() ? "Your assistant has it." : "Your profile is ready."}</h2>
+            <p class="section-label">Saved and verified</p>
+            <h2>Your {dimension.label.toLowerCase()} taste page is updated.</h2>
             <p>
-              {hostAvailable()
-                ? `Your ${dimension.label.toLowerCase()} preferences are being refined in memory. Revisit this profile whenever your taste shifts.`
-                : "This preview is outside Vellum, so the assistant hand-off was skipped. Your local flow is complete."}
+              {phase.ack.statements.length} preference {phase.ack.statements.length === 1 ? "statement" : "statements"} now
+              live on <code>{phase.ack.page}</code> — confirmed by reading the page back, not by trusting the send.
+              Your assistant reads that page before its next {dimension.label.toLowerCase()} draft.
             </p>
           </div>
           {dimension.sources.kind === "none" && <p class="reference-note">{dimension.sources.hint}</p>}
@@ -161,7 +221,7 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
     <section class="flow" data-dimension={dimension.id}>
       <Header dimension={dimension} onExit={onExit} />
 
-      <div class="stage-card v-card" ref={stageRef} tabIndex={-1} aria-busy={transitioning}>
+      <div class="stage-card v-card" ref={stageRef} tabIndex={-1} aria-busy={transitioning || busy}>
         <div class="flow-progress">
           <div class="progress-copy" aria-live="polite">
             <span>{stageLabel}</span>
@@ -192,36 +252,98 @@ export function Flow({ dimension, onExit, onSaved }: Props) {
             <SourceStep
               dimension={dimension}
               sourceText={sourceText}
-              setSourceText={setSourceText}
+              setSourceText={(value) => {
+                setSourceText(value);
+                invalidateAttempt();
+              }}
               items={items}
               draftItem={draftItem}
               setDraftItem={setDraftItem}
               addItem={addItem}
-              removeItem={(item) => setItems((prev) => prev.filter((value) => value !== item))}
+              removeItem={(item) => {
+                setItems((prev) => prev.filter((value) => value !== item));
+                invalidateAttempt();
+              }}
+              authorshipClaimed={authorshipClaimed}
+              setAuthorshipClaimed={(value) => {
+                setAuthorshipClaimed(value);
+                invalidateAttempt();
+              }}
             />
           )}
 
           {stage === "review" && <TasteSummary dimension={dimension} answers={answers} />}
         </div>
 
-        {(stage !== "questions" || step > 0) && <div class="flow-actions">
-          <button class="v-button ghost" type="button" onClick={previous}>Back</button>
-          {stage === "sources" && (
-            <button class="v-button primary" type="button" onClick={() => setStage("review")}>
-              View summary <span aria-hidden="true">→</span>
-            </button>
-          )}
-          {stage === "review" && (
-            <button class="v-button primary" type="button" disabled={saveState === "saving"} onClick={build}>
-              {saveState === "saving" ? "Saving baseline…" : "Save profile"} <span aria-hidden="true">→</span>
-            </button>
-          )}
-        </div>}
-        {stage === "review" && saveError && <p class="save-error" role="alert">{saveError}</p>}
+        {(stage !== "questions" || step > 0) && (
+          <div class="flow-actions">
+            <button class="v-button ghost" type="button" onClick={previous} disabled={busy}>Back</button>
+            {stage === "sources" && (
+              <button class="v-button primary" type="button" onClick={() => setStage("review")}>
+                View summary <span aria-hidden="true">→</span>
+              </button>
+            )}
+            {stage === "review" && (
+              <button
+                class="v-button primary"
+                type="button"
+                disabled={busy || answered === 0}
+                onClick={build}
+              >
+                {phase.phase === "sending"
+                  ? "Saving…"
+                  : phase.phase === "accepted"
+                    ? "Confirming durable save…"
+                    : phase.phase === "failed"
+                      ? "Retry save"
+                      : `Build my ${dimension.label.toLowerCase()} taste`}
+                <span aria-hidden="true"> →</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {stage === "review" && overflows.length > 0 && (
+          <div class="save-error" role="alert">
+            <p>Too much evidence to submit — trim and try again:</p>
+            <ul>
+              {overflows.map((overflow) => (
+                <li key={`${overflow.limit}-${overflow.message}`}>{overflow.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {stage === "review" && phase.phase === "failed" && (
+          <div class="save-error" role="alert">
+            <p>The save did not complete:</p>
+            <ul>
+              {phase.errors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+            <p>
+              {phase.canRetry
+                ? "Retry re-checks safely — the same request cannot be double-applied."
+                : "Adjust the inputs above and build again."}
+            </p>
+          </div>
+        )}
+        {stage === "review" && phase.phase === "unavailable" && (
+          <p class="save-error" role="alert">
+            This preview is outside Vellum, so nothing was sent and nothing was saved. Open Attune inside
+            Vellum to build the profile.
+          </p>
+        )}
       </div>
 
-      {stage === "review" && !hostAvailable() && (
-        <p class="handoff-note">Preview mode: saving will finish the local flow without sending anything.</p>
+      {stage === "review" && (
+        <p class="handoff-note">
+          Building saves your answers to the calibrated profile, then sends them
+          {hasSourceStep ? " with your references" : ""} to your assistant, which updates only the{" "}
+          <code>{PAGE_BY_DIMENSION[dimension.id]}</code> memory page with short derived preferences —
+          never your raw samples. Submitted evidence does pass through the host and the conversation
+          layer like any message. Success shows only after the page is read back and verified.
+        </p>
       )}
     </section>
   );
@@ -281,6 +403,8 @@ function SourceStep({
   setDraftItem,
   addItem,
   removeItem,
+  authorshipClaimed,
+  setAuthorshipClaimed,
 }: {
   dimension: Dimension;
   sourceText: string;
@@ -290,8 +414,11 @@ function SourceStep({
   setDraftItem: (value: string) => void;
   addItem: () => void;
   removeItem: (item: string) => void;
+  authorshipClaimed: boolean;
+  setAuthorshipClaimed: (value: boolean) => void;
 }) {
   const inputId = `sources-${dimension.id}`;
+  const authorshipId = `authorship-${dimension.id}`;
 
   return (
     <div class="source-step">
@@ -305,6 +432,18 @@ function SourceStep({
         <div class="field-group">
           <label for={inputId}>Samples or links</label>
           <textarea id={inputId} class="field" rows={7} placeholder={dimension.sources.placeholder} value={sourceText} onInput={(e) => setSourceText((e.target as HTMLTextAreaElement).value)} />
+          <label class="authorship-row" for={authorshipId}>
+            <input
+              id={authorshipId}
+              type="checkbox"
+              checked={authorshipClaimed}
+              onChange={(e) => setAuthorshipClaimed((e.target as HTMLInputElement).checked)}
+            />
+            <span>
+              I wrote the pasted text myself. Leave this off for collected or found material — the
+              assistant weighs claimed writing differently from samples of unknown origin.
+            </span>
+          </label>
         </div>
       )}
 
@@ -341,49 +480,32 @@ function SourceStep({
 }
 
 function TasteSummary({ dimension, answers }: { dimension: Dimension; answers: Answers }) {
-  const selected = dimension.pairs.map((pair, index) => ({
-    pair,
-    option: answers[pair.id],
-    index,
-  }));
-  const featuredIndexes = dimension.pairs.length >= 8 ? [0, 2, 4, dimension.pairs.length - 1] : selected.map((_, index) => index);
-  const featured = featuredIndexes.map((index) => selected[index]).filter(Boolean);
+  const selected = dimension.pairs
+    .map((pair, index) => ({ pair, option: answers[pair.id], index }))
+    .filter((entry): entry is { pair: Pair; option: Option; index: number } => entry.option !== undefined);
 
   return (
     <div class="summary-wrap" aria-live="polite">
       <div class="stage-heading summary-heading">
         <span class="optional-pill">Your read</span>
         <h2>Your {dimension.label.toLowerCase()} profile has a clear shape.</h2>
-        <p>These are the strongest signals from this pass. Save them now, then refine with references over time.</p>
+        <p>
+          {selected.length === 0
+            ? "Answer at least one question to build — there is nothing to save yet."
+            : "These are the signals from this pass. Building saves them as short preference statements."}
+        </p>
       </div>
 
       <div class="summary-traits" aria-label="Key taste signals">
-        {featured.map(({ option, pair }) => (
+        {selected.map(({ option, pair }) => (
           <div class="trait-card" key={pair.id}>
             <span class="trait-dot" aria-hidden="true" />
             <span>{sentenceCase(option.means)}</span>
           </div>
         ))}
       </div>
-
-      <details class="answer-details">
-        <summary>See all {selected.length} answers <span class="details-icon" aria-hidden="true" /></summary>
-        <div class="answer-list">
-          {selected.map(({ pair, option, index }) => (
-            <div class="answer-row" key={pair.id}>
-              <span>{formatSignal(pair.id, index)}</span>
-              <p>{option.means}</p>
-            </div>
-          ))}
-        </div>
-      </details>
     </div>
   );
-}
-
-function formatSignal(id: string, index: number): string {
-  const label = id.replace(/^(web|interior)-/, "").replace(/-/g, " ");
-  return `${String(index + 1).padStart(2, "0")} · ${label}`;
 }
 
 function sentenceCase(value: string): string {

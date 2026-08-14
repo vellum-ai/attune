@@ -389,3 +389,9 @@ h1, h2, h3, p { margin: 0; }
 .dimension-tab.selected { border-color: var(--taste-surface); color: var(--cobalt-dark); }
 .revision-note,
 .axis-explainer { color: color-mix(in srgb, var(--taste-white) 90%, transparent); }
+
+/* ── Attune hardening additions ─────────────────────────────────────────── */
+.authorship-row { display: flex; gap: .55rem; align-items: flex-start; margin-top: .6rem; font-size: .78rem; color: var(--taste-text-muted); cursor: pointer; }
+.authorship-row input { margin-top: .15rem; accent-color: var(--cobalt, #2743c8); }
+.save-error ul { margin: .35rem 0 .35rem 1rem; padding: 0; }
+.save-error li { margin: .15rem 0; }

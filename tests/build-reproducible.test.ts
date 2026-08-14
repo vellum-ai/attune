@@ -72,4 +72,22 @@ describe("build reproducibility", () => {
       rmSync(fresh, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("the committed build attestation matches a fresh build of the reviewed source", async () => {
+    const { computeAttestation, ATTESTATION_PATH } = await import("../scripts/build-app");
+    expect(existsSync(ATTESTATION_PATH)).toBe(true);
+    const committed = JSON.parse(readFileSync(ATTESTATION_PATH, "utf8"));
+
+    const fresh = mkdtempSync(join(tmpdir(), "taste-attest-"));
+    try {
+      await buildApp(APP_DIR, fresh);
+      const current = await computeAttestation(APP_DIR, fresh);
+      // The attestation is tracked source, so the install fingerprint covers
+      // it: inputs, recipe (esbuild version), and expected outputs must all
+      // match what reviewed source produces.
+      expect(current).toEqual(committed);
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

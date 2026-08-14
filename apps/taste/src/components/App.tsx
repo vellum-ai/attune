@@ -1,52 +1,61 @@
 /**
- * The app's two modes: a living profile dashboard and the calibration flow.
- * The dashboard is profile-first once the backend has a baseline for any
- * dimension, while the local completion store keeps the preview useful outside
- * Vellum.
+ * The app's screens: the calibration home, one dimension's flow, and — once
+ * any dimension has a saved baseline — the living-profile dashboard.
+ *
+ * Completion truth is layered honestly: inside Vellum the durable records are
+ * the structured profile (read over the profile route) and the plugin journal
+ * (read over the taste route, refreshed on the plugin's sync tags); the local
+ * store is a courtesy cache that keeps the plain-browser preview useful. The
+ * card copy says which one it is showing.
  */
 
 import { useEffect, useState } from "preact/hooks";
 
 import { DIMENSIONS, dimensionById, type DimensionId } from "../data";
+import { PAGE_BY_DIMENSION } from "../payload";
+import { onCompletionChange, readCompletion, type CompletionState } from "../storage";
 import {
+  fetchCompletion,
   fetchTasteProfile,
   hostAvailable,
-  readCompleted,
   relayPrompt,
+  routeAvailable,
   setOverride,
   showSplit,
-  subscribeTasteProfile,
+  subscribeTasteChanges,
   type ProfileAxis,
   type TasteProfile,
 } from "../vellum";
 import { Flow } from "./Flow";
 
+type ServerCompletion = Record<string, { persistedAt: string; statements: number }>;
+
 export function App() {
   const [open, setOpen] = useState<DimensionId | null>(null);
+  const [local, setLocal] = useState<CompletionState>(readCompletion);
+  const [server, setServer] = useState<ServerCompletion | null>(null);
   const [profile, setProfile] = useState<TasteProfile | null>(null);
-  const [completed, setCompleted] = useState(readCompleted);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
   const refresh = async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      setProfile(await fetchTasteProfile());
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Could not load the living profile.");
-    } finally {
-      setLoading(false);
+    setLocal(readCompletion());
+    if (routeAvailable()) {
+      const [completion, nextProfile] = await Promise.all([
+        fetchCompletion(),
+        fetchTasteProfile(),
+      ]);
+      setServer(completion);
+      setProfile(nextProfile);
     }
   };
 
   useEffect(() => {
     void refresh();
-    return subscribeTasteProfile((next) => {
-      setProfile(next);
-      setLoading(false);
-      setLoadError(null);
-    });
+    const offStorage = onCompletionChange(() => setLocal(readCompletion()));
+    const offSync = subscribeTasteChanges(() => void refresh());
+    return () => {
+      offStorage();
+      offSync();
+    };
   }, []);
 
   if (open) {
@@ -55,7 +64,6 @@ export function App() {
         dimension={dimensionById(open)}
         onSaved={() => void refresh()}
         onExit={() => {
-          setCompleted(readCompleted());
           setOpen(null);
           void refresh();
         }}
@@ -63,15 +71,12 @@ export function App() {
     );
   }
 
-  const baselineDimensions = profile?.dimensions.filter((dimension) => dimension.baselineComplete) ?? [];
-  const profileFirst = baselineDimensions.length > 0;
-
-  if (loading && !profile) return <LoadingScreen />;
-  if (profileFirst) {
+  const profileFirst = (profile?.dimensions ?? []).some((dimension) => dimension.baselineComplete);
+  if (profileFirst && profile) {
     return (
       <ProfileDashboard
-        profile={profile!}
-        onRefresh={refresh}
+        profile={profile}
+        onRefresh={() => void refresh()}
         onCalibrate={(id) => setOpen(id)}
       />
     );
@@ -79,46 +84,36 @@ export function App() {
 
   return (
     <CalibrationHome
-      completed={completed}
-      loadError={loadError}
+      local={local}
+      server={server}
       onOpen={setOpen}
-      onRefresh={refresh}
     />
   );
 }
 
-function LoadingScreen() {
-  return (
-    <main class="home state-screen" aria-live="polite" aria-busy="true">
-      <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste profiles</span>
-      <div class="loading-block"><span class="loading-line" /><span class="loading-line short" /><span class="loading-line shorter" /></div>
-      <p class="state-copy">Reading the living profile…</p>
-    </main>
-  );
-}
-
 function CalibrationHome({
-  completed,
-  loadError,
+  local,
+  server,
   onOpen,
-  onRefresh,
 }: {
-  completed: Record<string, number>;
-  loadError: string | null;
+  local: CompletionState;
+  server: ServerCompletion | null;
   onOpen: (id: DimensionId) => void;
-  onRefresh: () => void;
 }) {
-  const anyBuilt = Object.keys(completed).length > 0;
+  const anyBuilt =
+    Object.keys(local).length > 0 || (server !== null && Object.keys(server).length > 0);
 
   return (
     <main class="home">
       <header class="home-head">
-        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste profiles</span>
+        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Attune</span>
         <h1>Teach your assistant what good feels like.</h1>
-        <p class="lede">Choose a dimension, make a few clear calls, and save the result as a private preference profile.</p>
+        <p class="lede">
+          Four dimensions, each a few clear calls plus whatever references you already have. What
+          comes out is a calibrated profile and a set of taste pages your assistant reads before
+          its next draft.
+        </p>
       </header>
-
-      {loadError && <StatusNotice tone="error" message={loadError} actionLabel="Try again" onAction={onRefresh} />}
 
       <section class="dimension-section" aria-labelledby="dimension-heading">
         <div class="section-heading">
@@ -131,10 +126,15 @@ function CalibrationHome({
 
         <div class="cards">
           {DIMENSIONS.map((dimension) => {
-            const answered = completed[dimension.id] ?? 0;
-            const isComplete = answered >= dimension.pairs.length;
-            const hasPreviousProfile = answered > 0;
+            const persisted = server?.[dimension.id];
+            const localEntry = local[dimension.id];
             const minutes = Math.max(1, Math.ceil(dimension.pairs.length / 4));
+            const status = persisted || localEntry?.persistedAt
+              ? "Saved · verified"
+              : localEntry && localEntry.answered > 0
+                ? "Previous pass"
+                : "Not started";
+            const isComplete = status === "Saved · verified";
 
             return (
               <button
@@ -146,15 +146,13 @@ function CalibrationHome({
               >
                 <span class="dimension-card-top">
                   <span class="dimension-icon" aria-hidden="true"><span /></span>
-                  <span class={`status-pill${isComplete ? " complete" : ""}`}>
-                    {isComplete ? "Saved locally" : hasPreviousProfile ? "Previous pass" : "Not started"}
-                  </span>
+                  <span class={`status-pill${isComplete ? " complete" : ""}`}>{status}</span>
                 </span>
                 <span class="dimension-name">{dimension.label}</span>
                 <span class="dimension-blurb">{dimension.blurb}</span>
                 <span class="dimension-card-bottom">
                   <span class="dimension-meta">{dimension.pairs.length} questions · about {minutes} min</span>
-                  <span class="dimension-cta">{hasPreviousProfile ? "Refine" : "Start"} <span aria-hidden="true">→</span></span>
+                  <span class="dimension-cta">{isComplete || (localEntry?.answered ?? 0) > 0 ? "Refine" : "Start"} <span aria-hidden="true">→</span></span>
                 </span>
               </button>
             );
@@ -165,13 +163,27 @@ function CalibrationHome({
       {anyBuilt && (
         <aside class="memory-check" aria-label="Saved taste profiles">
           <div>
-            <p class="section-label">Saved locally</p>
-            <p>Preview mode keeps your completion state here. In Vellum, the living profile takes over after the first baseline is saved.</p>
+            <p class="section-label">{server ? "Saved in memory" : "Saved locally"}</p>
+            <p>
+              {server
+                ? "Your taste lives in the calibrated profile and on memory pages your assistant reads — ask it what it has."
+                : "This preview keeps completion state in this tab only. Inside Vellum, the durable record takes over."}
+            </p>
           </div>
-          <button class="v-button secondary" type="button" onClick={() => {
-            relayPrompt("What do you have recorded about my taste so far? Read the [[taste-writing]], [[taste-music]], [[taste-web-design]] and [[taste-interior-design]] memory pages and tell me what each one says — plainly, and say which ones are still thin.");
-            if (hostAvailable()) showSplit();
-          }}>Check memory <span aria-hidden="true">→</span></button>
+          <button
+            class="v-button secondary"
+            type="button"
+            onClick={() => {
+              relayPrompt(
+                `What do you have recorded about my taste so far? Read the ${Object.values(PAGE_BY_DIMENSION)
+                  .map((page) => `[[${page}]]`)
+                  .join(", ")} memory pages and the calibrated profile, and tell me what each says — plainly, and say which ones are still thin.`,
+              );
+              if (hostAvailable()) showSplit();
+            }}
+          >
+            Check memory <span aria-hidden="true">→</span>
+          </button>
         </aside>
       )}
     </main>
@@ -212,7 +224,7 @@ function ProfileDashboard({
     label: pair.axis.label,
     leftLabel: pair.axis.leftLabel,
     rightLabel: pair.axis.rightLabel,
-    learnedPosition: null,
+    learnedPosition: undefined,
     overridePosition: null,
     confidence: "low" as const,
     evidenceCount: 0,
@@ -226,6 +238,8 @@ function ProfileDashboard({
     if (result.ok) {
       setActionMessage({ tone: "success", text: position === null ? "Current preference cleared." : "Current preference saved." });
       onRefresh();
+    } else if (result.unavailable) {
+      setActionMessage({ tone: "error", text: "This preview is outside Vellum — calibration is not saved here." });
     } else {
       setActionMessage({ tone: "error", text: result.error ?? "Could not save this preference." });
     }
@@ -234,7 +248,7 @@ function ProfileDashboard({
   return (
     <main class="home profile-home">
       <header class="home-head profile-head">
-        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Taste / living profile</span>
+        <span class="product-mark"><span class="signal-tab" aria-hidden="true" />Attune / living profile</span>
         <h1>What good feels like, lately.</h1>
         <p class="lede">Your learned profile is a working sketch, not a verdict. Adjust the current preference when your taste moves. The evidence stays visible underneath.</p>
       </header>
@@ -385,8 +399,8 @@ function AxisRow({ axis, saving, onChange }: { axis: ProfileAxis; saving: boolea
   );
 }
 
-function StatusNotice({ tone, message, actionLabel, onAction }: { tone: "success" | "error"; message: string; actionLabel?: string; onAction?: () => void }) {
-  return <div class={`status-notice ${tone}`} role={tone === "error" ? "alert" : "status"}><span>{message}</span>{actionLabel && onAction && <button type="button" class="notice-action" onClick={onAction}>{actionLabel}</button>}</div>;
+function StatusNotice({ tone, message }: { tone: "success" | "error"; message: string }) {
+  return <div class={`status-notice ${tone}`} role={tone === "error" ? "alert" : "status"}><span>{message}</span></div>;
 }
 
 function clampPosition(value: number): number {
